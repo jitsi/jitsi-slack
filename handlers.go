@@ -2,9 +2,11 @@ package jitsi
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -12,8 +14,15 @@ import (
 )
 
 const (
-	userTemplate = `{"attachments":[{"fallback":"You have sent invites to your meeting.","title":"You have sent invites to your meeting.","color":"#3AA3E3","attachment_type":"default","actions":[{"name":"join","text":"Join","type":"button","url":"%s","style":"primary"}]}]}`
-	roomTemplate = `{"response_type":"in_channel","attachments":[{"fallback":"Meeting starting %s","title":"Meeting starting %s","color":"#3AA3E3","attachment_type":"default","actions":[{"name":"join","text":"Join","type":"button","url":"%s","style":"primary"}]}]}`
+	roomTemplate   = `{"response_type":"in_channel","attachments":[{"fallback":"Meeting started %s","title":"Meeting started %s","color":"#3AA3E3","attachment_type":"default","actions":[{"name":"join","text":"Join","type":"button","url":"%s","style":"primary"}]}]}`
+	userTemplate   = `{"response_type":"ephemeral","attachments":[{"fallback":"Invitations have been sent for your meeting.","title":"Invitations have been sent for your meeting.","color":"#3AA3E3","attachment_type":"default","actions":[{"name":"join","text":"Join","type":"button","url":"%s","style":"primary"}]}]}`
+	helpMessage    = `{"response_type":"ephemeral","text":"How to use /jitsi...","attachments":[{"text":"To share a conference link with the channel, use '/jitsi'. Now everyone can join.\nTo share a conference link with users, use 'jitsi @bob @alice'. Now you can meet with Bob and Alice."}]}`
+	installMessage = `{"response_type":"ephemeral","text":"Please install the jitsi meet app to integrate with your slack workspace.","attachments":[{"text":"%s"}]}`
+
+	// error strings from slack api
+	errInvalidAuth      = "invalid_auth"
+	errInactiveAccount  = "account_inactive"
+	errMissingAuthToken = "not_authed"
 )
 
 var atMentionRE = regexp.MustCompile(`<@([^>|]+)`)
@@ -35,6 +44,49 @@ type ConferenceTokenGenerator interface {
 	CreateJWT(tenantID, tenantName, roomClaim, userID, userName, avatarURL string) (string, error)
 }
 
+// TokenReader provides an interface for reading access token data from
+// a token store.
+type TokenReader interface {
+	GetFirstBotTokenForTeam(teamID string) (string, error)
+}
+
+func handleRequestValidation(w http.ResponseWriter, r *http.Request, SlackSigningSecret string) bool {
+	ts := r.Header.Get(RequestTimestampHeader)
+	sig := r.Header.Get(RequestSignatureHeader)
+	if ts == "" || sig == "" {
+		w.WriteHeader(http.StatusUnauthorized)
+		return false
+	}
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return false
+	}
+	defer r.Body.Close()
+
+	if !ValidRequest(SlackSigningSecret, string(body), ts, sig) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return false
+	}
+
+	r.Body = ioutil.NopCloser(bytes.NewBuffer(body))
+	return true
+}
+
+func help(w http.ResponseWriter) {
+	w.Header().Set("Content-type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(helpMessage))
+}
+
+func install(w http.ResponseWriter, sharableURL string) {
+	installMsg := fmt.Sprintf(installMessage, sharableURL)
+	w.Header().Set("Content-type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(installMsg))
+}
+
 // SlashCommandHandlers provides http handlers for Slack slash commands
 // that integrate with Jitsi Meet.
 type SlashCommandHandlers struct {
@@ -42,12 +94,12 @@ type SlashCommandHandlers struct {
 	ConferenceHost     string
 	TokenGenerator     ConferenceTokenGenerator
 	SlackSigningSecret string
-	// TODO convert to an interface; opt-in
-	BotClient *slack.Client
+	TokenReader        TokenReader
+	SharableURL        string
 }
 
-func (s *SlashCommandHandlers) inviteUser(hostID, userID, teamID, teamName, room string) error {
-	userInfo, err := s.BotClient.GetUserInfo(userID)
+func (s *SlashCommandHandlers) inviteUser(client *slack.Client, hostID, userID, teamID, teamName, room string) error {
+	userInfo, err := client.GetUserInfo(userID)
 	if err != nil {
 		s.Log.Errorf("retrieving user info from slack: %v", err)
 		return err
@@ -60,8 +112,11 @@ func (s *SlashCommandHandlers) inviteUser(hostID, userID, teamID, teamName, room
 		userInfo.Name,
 		userInfo.Profile.Image192,
 	)
+	if err != nil {
+		return err
+	}
 
-	channel, _, _, err := s.BotClient.OpenConversation(
+	channel, _, _, err := client.OpenConversation(
 		&slack.OpenConversationParameters{
 			Users: []string{userID},
 		},
@@ -96,50 +151,54 @@ func (s *SlashCommandHandlers) inviteUser(hostID, userID, teamID, teamName, room
 		},
 	}
 	params.Attachments = []slack.Attachment{attachment}
-	s.BotClient.PostMessage(
+	_, _, err = client.PostMessage(
 		channel.ID,
 		"",
 		params,
 	)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
 // Jitsi will create a conference and dispatch an invite message to both users.
 // It is a slash command for Slack.
 func (s *SlashCommandHandlers) Jitsi(w http.ResponseWriter, r *http.Request) {
-	ts := r.Header.Get(RequestTimestampHeader)
-	sig := r.Header.Get(RequestSignatureHeader)
-	if ts == "" || sig == "" {
-		s.Log.Errorf("recieved an invalid request; sig or ts missing")
-		w.WriteHeader(http.StatusUnauthorized)
+	if !handleRequestValidation(w, r, s.SlackSigningSecret) {
 		return
 	}
-
-	body, err := ioutil.ReadAll(r.Body)
+	err := r.ParseForm()
 	if err != nil {
-		s.Log.Errorf("reading req body: %v", err)
+		s.Log.Errorf("parsing form data: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	defer r.Body.Close()
-
-	if !ValidRequest(s.SlackSigningSecret, string(body), ts, sig) {
-		s.Log.Errorf("recieved an invalid request; sig mismatch")
-		w.WriteHeader(http.StatusUnauthorized)
-		return
-	}
-
-	// Restore the body after it was read for verification so we can
-	// easily parse the form data.
-	r.Body = ioutil.NopCloser(bytes.NewBuffer(body))
-	r.ParseForm()
 	callerID := r.PostFormValue("user_id")
 	teamID := r.PostFormValue("team_id")
 	teamName := r.PostFormValue("team_domain")
 	text := r.PostFormValue("text")
 
-	room := RandomName()
+	if strings.ToLower(text) == "help" {
+		help(w)
+		return
+	}
 
+	// Grab an access token after validating request and body
+	// so we can fail early if we don't have one.
+	token, err := s.TokenReader.GetFirstBotTokenForTeam(teamID)
+	if err != nil {
+		switch err.Error() {
+		case errMissingAuthToken:
+			install(w, s.SharableURL)
+		default:
+			s.Log.Errorf("retrieving token: %s", err)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		return
+	}
+
+	room := RandomName()
 	matches := atMentionRE.FindAllStringSubmatch(text, -1)
 	if matches == nil {
 		meetingURL := fmt.Sprintf(
@@ -156,21 +215,31 @@ func (s *SlashCommandHandlers) Jitsi(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slackClient := slack.New(token)
 	for _, match := range matches {
-		err := s.inviteUser(callerID, match[1], teamID, teamName, room)
+		err = s.inviteUser(slackClient, callerID, match[1], teamID, teamName, room)
 		if err != nil {
-			s.Log.Errorf("inviting user: %v", err)
+			switch err.Error() {
+			case errInvalidAuth, errInactiveAccount, errMissingAuthToken:
+				install(w, s.SharableURL)
+				return
+			default:
+				s.Log.Errorf("inviting user: %v", err)
+			}
 		}
 	}
 
-	callerInfo, err := s.BotClient.GetUserInfo(callerID)
+	callerInfo, err := slackClient.GetUserInfo(callerID)
 	if err != nil {
-		s.Log.Errorf("retrieving user info from slack: %v", err)
-		w.WriteHeader(http.StatusOK)
+		switch err.Error() {
+		case errInvalidAuth, errInactiveAccount, errMissingAuthToken:
+			install(w, s.SharableURL)
+		default:
+			s.Log.Errorf("retrieving user info from slack: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
 		return
 	}
-
-	// TODO: make a function for auth'ed urls.
 	callerToken, err := s.TokenGenerator.CreateJWT(
 		strings.ToLower(teamID),
 		strings.ToLower(teamName),
@@ -193,4 +262,100 @@ func (s *SlashCommandHandlers) Jitsi(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	resp := fmt.Sprintf(userTemplate, callerConfURL)
 	w.Write([]byte(resp))
+}
+
+// TokenWriter provides an interface to write access token data to the
+// token store.
+type TokenWriter interface {
+	Store(data *TokenData) error
+}
+
+// SlackOAuthHandlers is used for handling Slack OAuth validation.
+type SlackOAuthHandlers struct {
+	Log               logger
+	AccessURLTemplate string
+	ClientID          string
+	ClientSecret      string
+	AppID             string
+	TokenWriter       TokenWriter
+}
+
+type botToken struct {
+	BotUserID      string `json:"bot_user_id"`
+	BotAccessToken string `json:"bot_access_token"`
+}
+
+type accessResponse struct {
+	OK          bool     `json:"ok"`
+	AccessToken string   `json:"access_token"`
+	Scope       string   `json:"scope"`
+	UserID      string   `json:"user_id"`
+	TeamName    string   `json:"team_name"`
+	TeamID      string   `json:"team_id"`
+	Bot         botToken `json:"bot"`
+}
+
+// Auth validates OAuth access tokens.
+func (o *SlackOAuthHandlers) Auth(w http.ResponseWriter, r *http.Request) {
+	params, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		o.Log.Errorf("parsing query params: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	if params["error"] != nil {
+		o.Log.Errorf("error response: %s", params["error"])
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	code := params["code"]
+	if len(code) != 1 {
+		o.Log.Error("code not provided")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// TODO: inject an http client with http logging.
+	resp, err := http.Get(fmt.Sprintf(
+		o.AccessURLTemplate,
+		o.ClientID,
+		o.ClientSecret,
+		code[0],
+	))
+	if err != nil {
+		o.Log.Errorf("request err: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	var access accessResponse
+	if err := json.NewDecoder(resp.Body).Decode(&access); err != nil {
+		o.Log.Errorf("decoding slack oauth access response: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	if !access.OK {
+		o.Log.Error("access not ok")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	err = o.TokenWriter.Store(&TokenData{
+		TeamID:      access.TeamID,
+		UserID:      access.UserID,
+		BotToken:    access.Bot.BotAccessToken,
+		BotUserID:   access.Bot.BotUserID,
+		AccessToken: access.AccessToken,
+	})
+	if err != nil {
+		o.Log.Errorf("storing token: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	redirect := fmt.Sprintf("https://slack.com/app_redirect?app=%s", o.AppID)
+	http.Redirect(w, r, redirect, http.StatusFound)
 }

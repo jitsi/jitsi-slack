@@ -6,8 +6,10 @@ import (
 	"os"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/dynamodb"
 	jitsi "github.com/jitsi/jitsi-slack"
-	"github.com/nlopes/slack"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -20,8 +22,13 @@ func init() {
 
 const (
 	// secrets and environment configuration
-	envSlackBotToken           = "SLACK_JITSI_BOT_TOKEN"
 	envSlackJitsiSigningSecret = "SLACK_JITSI_SIGNING_SECRET"
+	envSlackClientID           = "SLACK_CLIENT_ID"
+	envSlackClientSecret       = "SLACK_CLIENT_SECRET"
+	envSlackAppID              = "SLACK_APP_ID"
+	envSlackAppSharableURL     = "SLACK_APP_SHARABLE_URL"
+	envDynamoTable             = "DYNAMO_TABLE"
+	envDynamoRegion            = "DYNAMO_REGION"
 	envJitsiSigningKey         = "JITSI_TOKEN_SIGNING_KEY"
 	envJitsiKID                = "JITSI_TOKEN_KID"
 	envJitsiISS                = "JITSI_TOKEN_ISS"
@@ -32,8 +39,11 @@ const (
 
 type app struct {
 	// Slack App/OAuth client configuration
-	slackBotToken      string
-	slackSigningSecret string
+	slackSigningSecret  string
+	slackClientID       string
+	slackClientSecret   string
+	slackAppID          string
+	slackAppSharableURL string
 
 	// jitsi configuration
 	jitsiTokenSigningKey string
@@ -41,6 +51,10 @@ type app struct {
 	jitsiTokenIssuer     string
 	jitsiTokenAudience   string
 	jitsiConferenceHost  string
+
+	// dynamodb configuration
+	dynamoTable  string
+	dynamoRegion string
 
 	// application configuration
 	httpPort string
@@ -53,17 +67,47 @@ func newApp() (*app, error) {
 		return fmt.Errorf("%s must be set in env", envVarName)
 	}
 
-	botToken, ok := os.LookupEnv(envSlackBotToken)
+	table, ok := os.LookupEnv(envDynamoTable)
 	if !ok {
-		return nil, retErr(envSlackBotToken)
+		return nil, retErr(envDynamoTable)
 	}
-	a.slackBotToken = botToken
+	a.dynamoTable = table
+
+	region, ok := os.LookupEnv(envDynamoRegion)
+	if !ok {
+		return nil, retErr(envDynamoRegion)
+	}
+	a.dynamoRegion = region
+
+	appID, ok := os.LookupEnv(envSlackAppID)
+	if !ok {
+		return nil, retErr(envSlackAppID)
+	}
+	a.slackAppID = appID
+
+	appSharableURL, ok := os.LookupEnv(envSlackAppSharableURL)
+	if !ok {
+		return nil, retErr(envSlackAppSharableURL)
+	}
+	a.slackAppSharableURL = appSharableURL
 
 	sss, ok := os.LookupEnv(envSlackJitsiSigningSecret)
 	if !ok {
 		return nil, retErr(envSlackJitsiSigningSecret)
 	}
 	a.slackSigningSecret = sss
+
+	clientID, ok := os.LookupEnv(envSlackClientID)
+	if !ok {
+		return nil, retErr(envSlackClientID)
+	}
+	a.slackClientID = clientID
+
+	clientSecret, ok := os.LookupEnv(envSlackClientSecret)
+	if !ok {
+		return nil, retErr(envSlackClientSecret)
+	}
+	a.slackClientSecret = clientSecret
 
 	jitsiTokenSigningKey, ok := os.LookupEnv(envJitsiSigningKey)
 	if !ok {
@@ -111,8 +155,25 @@ func main() {
 		log.Fatalf("mis-configuration %v", err)
 	}
 
+	logger := log.New()
+
+	// Setup dynamodb session and create a token store.
+	cfg := aws.Config{
+		Region: aws.String(app.dynamoRegion),
+	}
+	sess, err := session.NewSession(&cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+	svc := dynamodb.New(sess)
+	tokenStore := jitsi.TokenStore{
+		TableName: app.dynamoTable,
+		DB:        svc,
+	}
+
+	// Setup handlers for slash commands.
 	slashCmd := jitsi.SlashCommandHandlers{
-		Log:            log.New(),
+		Log:            logger,
 		ConferenceHost: app.jitsiConferenceHost,
 		TokenGenerator: jitsi.TokenGenerator{
 			Lifetime:   time.Hour * 24,
@@ -122,10 +183,22 @@ func main() {
 			Kid:        app.jitsiTokenKid,
 		},
 		SlackSigningSecret: app.slackSigningSecret,
-		BotClient:          slack.New(app.slackBotToken),
+		SharableURL:        app.slackAppSharableURL,
+		TokenReader:        &tokenStore,
+	}
+
+	accessURL := "https://slack.com/api/oauth.access?client_id=%s&client_secret=%s&code=%s"
+	oauthHandler := jitsi.SlackOAuthHandlers{
+		Log:               logger,
+		AccessURLTemplate: accessURL,
+		ClientID:          app.slackClientID,
+		ClientSecret:      app.slackClientSecret,
+		AppID:             app.slackAppID,
+		TokenWriter:       &tokenStore,
 	}
 
 	http.HandleFunc("/slash/jitsi", slashCmd.Jitsi)
+	http.HandleFunc("/slack/auth", oauthHandler.Auth)
 
 	log.Infof("listening on :%s", app.httpPort)
 	http.ListenAndServe(fmt.Sprintf(":%s", app.httpPort), nil)
