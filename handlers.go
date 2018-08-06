@@ -43,12 +43,11 @@ type SlashCommandHandlers struct {
 	TokenGenerator     ConferenceTokenGenerator
 	SlackSigningSecret string
 	// TODO convert to an interface; opt-in
-	APIClient *slack.Client
 	BotClient *slack.Client
 }
 
 func (s *SlashCommandHandlers) inviteUser(hostID, userID, teamID, teamName, room string) error {
-	userInfo, err := s.APIClient.GetUserInfo(userID)
+	userInfo, err := s.BotClient.GetUserInfo(userID)
 	if err != nil {
 		s.Log.Errorf("retrieving user info from slack: %v", err)
 		return err
@@ -164,7 +163,7 @@ func (s *SlashCommandHandlers) Jitsi(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	callerInfo, err := s.APIClient.GetUserInfo(callerID)
+	callerInfo, err := s.BotClient.GetUserInfo(callerID)
 	if err != nil {
 		s.Log.Errorf("retrieving user info from slack: %v", err)
 		w.WriteHeader(http.StatusOK)

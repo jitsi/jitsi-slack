@@ -21,7 +21,6 @@ func init() {
 const (
 	// secrets and environment configuration
 	envSlackBotToken           = "SLACK_JITSI_BOT_TOKEN"
-	envSlackAPIToken           = "SLACK_JITSI_API_TOKEN"
 	envSlackJitsiSigningSecret = "SLACK_JITSI_SIGNING_SECRET"
 	envJitsiSigningKey         = "JITSI_TOKEN_SIGNING_KEY"
 	envJitsiKID                = "JITSI_TOKEN_KID"
@@ -34,7 +33,6 @@ const (
 type app struct {
 	// Slack App/OAuth client configuration
 	slackBotToken      string
-	slackAPIToken      string
 	slackSigningSecret string
 
 	// jitsi configuration
@@ -60,12 +58,6 @@ func newApp() (*app, error) {
 		return nil, retErr(envSlackBotToken)
 	}
 	a.slackBotToken = botToken
-
-	apiToken, ok := os.LookupEnv(envSlackAPIToken)
-	if !ok {
-		return nil, retErr(envSlackAPIToken)
-	}
-	a.slackAPIToken = apiToken
 
 	sss, ok := os.LookupEnv(envSlackJitsiSigningSecret)
 	if !ok {
@@ -130,7 +122,6 @@ func main() {
 			Kid:        app.jitsiTokenKid,
 		},
 		SlackSigningSecret: app.slackSigningSecret,
-		APIClient:          slack.New(app.slackAPIToken),
 		BotClient:          slack.New(app.slackBotToken),
 	}
 
