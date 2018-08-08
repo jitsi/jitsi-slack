@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/nlopes/slack"
+	"github.com/rs/zerolog/hlog"
 )
 
 const (
@@ -26,17 +27,6 @@ const (
 )
 
 var atMentionRE = regexp.MustCompile(`<@([^>|]+)`)
-
-type logger interface {
-	Debug(args ...interface{})
-	Debugf(format string, args ...interface{})
-	Info(args ...interface{})
-	Infof(format string, args ...interface{})
-	Warn(args ...interface{})
-	Warnf(format string, args ...interface{})
-	Error(args ...interface{})
-	Errorf(format string, args ...interface{})
-}
 
 // ConferenceTokenGenerator provides an interface for creating video conference
 // authenticated access via JWT.
@@ -90,7 +80,6 @@ func install(w http.ResponseWriter, sharableURL string) {
 // SlashCommandHandlers provides http handlers for Slack slash commands
 // that integrate with Jitsi Meet.
 type SlashCommandHandlers struct {
-	Log                logger
 	ConferenceHost     string
 	TokenGenerator     ConferenceTokenGenerator
 	SlackSigningSecret string
@@ -101,7 +90,6 @@ type SlashCommandHandlers struct {
 func (s *SlashCommandHandlers) inviteUser(client *slack.Client, hostID, userID, teamID, teamName, room string) error {
 	userInfo, err := client.GetUserInfo(userID)
 	if err != nil {
-		s.Log.Errorf("retrieving user info from slack: %v", err)
 		return err
 	}
 	userToken, err := s.TokenGenerator.CreateJWT(
@@ -122,7 +110,6 @@ func (s *SlashCommandHandlers) inviteUser(client *slack.Client, hostID, userID, 
 		},
 	)
 	if err != nil {
-		s.Log.Errorf("opening slack conversation: %v", err)
 		return err
 	}
 
@@ -170,7 +157,9 @@ func (s *SlashCommandHandlers) Jitsi(w http.ResponseWriter, r *http.Request) {
 	}
 	err := r.ParseForm()
 	if err != nil {
-		s.Log.Errorf("parsing form data: %v", err)
+		hlog.FromRequest(r).Error().
+			Err(err).
+			Msg("unable to parse form data")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -192,7 +181,9 @@ func (s *SlashCommandHandlers) Jitsi(w http.ResponseWriter, r *http.Request) {
 		case errMissingAuthToken:
 			install(w, s.SharableURL)
 		default:
-			s.Log.Errorf("retrieving token: %s", err)
+			hlog.FromRequest(r).Error().
+				Err(err).
+				Msg("retrieving token")
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 		return
@@ -224,7 +215,9 @@ func (s *SlashCommandHandlers) Jitsi(w http.ResponseWriter, r *http.Request) {
 				install(w, s.SharableURL)
 				return
 			default:
-				s.Log.Errorf("inviting user: %v", err)
+				hlog.FromRequest(r).Error().
+					Err(err).
+					Msg("inviting user")
 			}
 		}
 	}
@@ -235,7 +228,9 @@ func (s *SlashCommandHandlers) Jitsi(w http.ResponseWriter, r *http.Request) {
 		case errInvalidAuth, errInactiveAccount, errMissingAuthToken:
 			install(w, s.SharableURL)
 		default:
-			s.Log.Errorf("retrieving user info from slack: %v", err)
+			hlog.FromRequest(r).Error().
+				Err(err).
+				Msg("retrieving user info from slack")
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 		return
@@ -272,7 +267,6 @@ type TokenWriter interface {
 
 // SlackOAuthHandlers is used for handling Slack OAuth validation.
 type SlackOAuthHandlers struct {
-	Log               logger
 	AccessURLTemplate string
 	ClientID          string
 	ClientSecret      string
@@ -299,20 +293,26 @@ type accessResponse struct {
 func (o *SlackOAuthHandlers) Auth(w http.ResponseWriter, r *http.Request) {
 	params, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
-		o.Log.Errorf("parsing query params: %v", err)
+		hlog.FromRequest(r).Error().
+			Err(err).
+			Msg("parsing query params")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
 	if params["error"] != nil {
-		o.Log.Errorf("error response: %s", params["error"])
+		hlog.FromRequest(r).Error().
+			Err(err).
+			Msg("error response user declined install")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
 	code := params["code"]
 	if len(code) != 1 {
-		o.Log.Error("code not provided")
+		hlog.FromRequest(r).Error().
+			Err(err).
+			Msg("code not provided")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -325,20 +325,26 @@ func (o *SlackOAuthHandlers) Auth(w http.ResponseWriter, r *http.Request) {
 		code[0],
 	))
 	if err != nil {
-		o.Log.Errorf("request err: %v", err)
+		hlog.FromRequest(r).Error().
+			Err(err).
+			Msg("oauth req error")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
 	var access accessResponse
 	if err := json.NewDecoder(resp.Body).Decode(&access); err != nil {
-		o.Log.Errorf("decoding slack oauth access response: %v", err)
+		hlog.FromRequest(r).Error().
+			Err(err).
+			Msg("unable to decode slack access response")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
 	if !access.OK {
-		o.Log.Error("access not ok")
+		hlog.FromRequest(r).Error().
+			Err(err).
+			Msg("access not ok")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -351,7 +357,9 @@ func (o *SlackOAuthHandlers) Auth(w http.ResponseWriter, r *http.Request) {
 		AccessToken: access.AccessToken,
 	})
 	if err != nil {
-		o.Log.Errorf("storing token: %v", err)
+		hlog.FromRequest(r).Error().
+			Err(err).
+			Msg("unable to store token")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
