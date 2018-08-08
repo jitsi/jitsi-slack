@@ -63,16 +63,34 @@
   revision = "0b12d6b5"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/justinas/alice"
+  packages = ["."]
+  revision = "03f45bd4b7dad4734bc4620e46a35789349abb20"
+
+[[projects]]
   name = "github.com/nlopes/slack"
   packages = ["."]
   revision = "0db1d5eae1116bf7c8ed96c6749acfbf4daaec3e"
   version = "v0.3.0"
 
 [[projects]]
-  name = "github.com/sirupsen/logrus"
+  name = "github.com/rs/xid"
   packages = ["."]
-  revision = "3e01752db0189b9157070a0e1668a620f9a85da2"
-  version = "v1.0.6"
+  revision = "2c7e97ce663ff82c49656bca3048df0fdd83c5f9"
+  version = "v1.2.0"
+
+[[projects]]
+  name = "github.com/rs/zerolog"
+  packages = [
+    ".",
+    "hlog",
+    "internal/cbor",
+    "internal/json",
+    "log"
+  ]
+  revision = "77db4b4f350e31be66a57c332acb7721cf9ff9bb"
+  version = "v1.8.0"
 
 [[projects]]
   branch = "master"
@@ -81,10 +99,10 @@
   revision = "9a301d65acbb728fcc3ace14f45f511a4cfeea9c"
 
 [[projects]]
-  branch = "master"
-  name = "golang.org/x/crypto"
-  packages = ["ssh/terminal"]
-  revision = "56440b844dfe139a8ac053f4ecac0b20b79058f4"
+  name = "github.com/zenazn/goji"
+  packages = ["web/mutil"]
+  revision = "64eb34159fe53473206c2b3e70fe396a639452f2"
+  version = "v1.0"
 
 [[projects]]
   branch = "master"
@@ -93,11 +111,11 @@
     "unix",
     "windows"
   ]
-  revision = "0ffbfd41fbef8ffcf9b62b0b0aa3a5873ed7a4fe"
+  revision = "904bdc257025c7b3f43c19360ad3ab85783fad78"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "a4f8fa1b144166dc81526cd4c9b23bb8167fbcc88bab22529b8d6bf90047ca7d"
+  inputs-digest = "169d90d936193b30eeb0c6c2d4e61dfa5bd56fe2f276c032a59c87b797e8f77f"
   solver-name = "gps-cdcl"
   solver-version = 1
