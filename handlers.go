@@ -11,16 +11,10 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nlopes/slack"
 	"github.com/rs/zerolog/hlog"
 )
 
 const (
-	roomTemplate   = `{"response_type":"in_channel","attachments":[{"fallback":"Meeting started %s","title":"Meeting started %s","color":"#3AA3E3","attachment_type":"default","actions":[{"name":"join","text":"Join","type":"button","url":"%s","style":"primary"}]}]}`
-	userTemplate   = `{"response_type":"ephemeral","attachments":[{"fallback":"Invitations have been sent for your meeting.","title":"Invitations have been sent for your meeting.","color":"#3AA3E3","attachment_type":"default","actions":[{"name":"join","text":"Join","type":"button","url":"%s","style":"primary"}]}]}`
-	helpMessage    = `{"response_type":"ephemeral","text":"How to use /jitsi...","attachments":[{"text":"To share a conference link with the channel, use '/jitsi'. Now everyone can join.\nTo share a conference link with users, use 'jitsi @bob @alice'. Now you can meet with Bob and Alice."}]}`
-	installMessage = `{"response_type":"ephemeral","text":"Please install the jitsi meet app to integrate with your slack workspace.","attachments":[{"text":"%s"}]}`
-
 	// error strings from slack api
 	errInvalidAuth      = "invalid_auth"
 	errInactiveAccount  = "account_inactive"
@@ -29,18 +23,24 @@ const (
 	errAccessDenied     = "access_denied"
 )
 
-var atMentionRE = regexp.MustCompile(`<@([^>|]+)`)
-
-// ConferenceTokenGenerator provides an interface for creating video conference
-// authenticated access via JWT.
-type ConferenceTokenGenerator interface {
-	CreateJWT(tenantID, tenantName, roomClaim, userID, userName, avatarURL string) (string, error)
-}
+var (
+	atMentionRE    = regexp.MustCompile(`<@([^>|]+)`)
+	serverCmdRE    = regexp.MustCompile(`^server`)
+	serverConfigRE = regexp.MustCompile(`^server\s+(<https?:\/\/\S+>)`)
+	helpCmdRE      = regexp.MustCompile(`^help`)
+)
 
 // TokenReader provides an interface for reading access token data from
 // a token store.
 type TokenReader interface {
 	GetFirstBotTokenForTeam(teamID string) (string, error)
+}
+
+// ServerConfigWriter provides an interface for writing server configuration
+// data for a team's workspace.
+type ServerConfigWriter interface {
+	Store(*ServerCfgData) error
+	Remove(string) error
 }
 
 func handleRequestValidation(w http.ResponseWriter, r *http.Request, SlackSigningSecret string) bool {
@@ -83,73 +83,11 @@ func install(w http.ResponseWriter, sharableURL string) {
 // SlashCommandHandlers provides http handlers for Slack slash commands
 // that integrate with Jitsi Meet.
 type SlashCommandHandlers struct {
-	ConferenceHost     string
-	TokenGenerator     ConferenceTokenGenerator
+	MeetingGenerator   *MeetingGenerator
 	SlackSigningSecret string
 	TokenReader        TokenReader
 	SharableURL        string
-}
-
-func (s *SlashCommandHandlers) inviteUser(client *slack.Client, hostID, userID, teamID, teamName, room string) error {
-	userInfo, err := client.GetUserInfo(userID)
-	if err != nil {
-		return err
-	}
-	userToken, err := s.TokenGenerator.CreateJWT(
-		strings.ToLower(teamID),
-		strings.ToLower(teamName),
-		room,
-		userInfo.ID,
-		userInfo.Name,
-		userInfo.Profile.Image192,
-	)
-	if err != nil {
-		return err
-	}
-
-	channel, _, _, err := client.OpenConversation(
-		&slack.OpenConversationParameters{
-			Users: []string{userID},
-		},
-	)
-	if err != nil {
-		return err
-	}
-
-	confURL := fmt.Sprintf(
-		"%s/%s/%s?jwt=%s",
-		s.ConferenceHost,
-		strings.ToLower(teamName),
-		room,
-		userToken,
-	)
-
-	params := slack.PostMessageParameters{}
-	msg := fmt.Sprintf("<@%s> would like you to join a meeting.", hostID)
-	attachment := slack.Attachment{
-		Fallback: msg,
-		Title:    msg,
-		Color:    "#3AA3E3",
-		Actions: []slack.AttachmentAction{
-			slack.AttachmentAction{
-				Name:  "join",
-				Text:  "Join",
-				Type:  "button",
-				Style: "primary",
-				URL:   confURL,
-			},
-		},
-	}
-	params.Attachments = []slack.Attachment{attachment}
-	_, _, err = client.PostMessage(
-		channel.ID,
-		"",
-		params,
-	)
-	if err != nil {
-		return err
-	}
-	return nil
+	ServerConfigWriter ServerConfigWriter
 }
 
 // Jitsi will create a conference and dispatch an invite message to both users.
@@ -166,18 +104,87 @@ func (s *SlashCommandHandlers) Jitsi(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	callerID := r.PostFormValue("user_id")
+
+	text := r.PostFormValue("text")
+	if helpCmdRE.MatchString(text) {
+		help(w)
+	} else if serverCmdRE.MatchString(text) {
+		s.configureServer(w, r)
+	} else {
+		s.dispatchInvites(w, r)
+	}
+}
+
+func (s *SlashCommandHandlers) configureServer(w http.ResponseWriter, r *http.Request) {
 	teamID := r.PostFormValue("team_id")
-	teamName := r.PostFormValue("team_domain")
 	text := r.PostFormValue("text")
 
-	if strings.ToLower(text) == "help" {
-		help(w)
+	// First check if the default is being requested.
+	configuration := strings.Split(text, " ")
+	if configuration[1] == "default" {
+		err := s.ServerConfigWriter.Remove(teamID)
+		if err != nil {
+			hlog.FromRequest(r).Error().
+				Err(err).
+				Msg("defaulting server")
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "Your team's conferences will now be hosted on https://meet.jit.si")
 		return
 	}
 
-	// Grab an access token after validating request and body
-	// so we can fail early if we don't have one.
+	if !serverConfigRE.MatchString(text) {
+		w.Header().Set("Content-type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "A proper conference host must be provided.")
+		return
+	}
+
+	host := serverConfigRE.FindAllStringSubmatch(text, -1)[0][1]
+	host = strings.Trim(host, "<>")
+	err := s.ServerConfigWriter.Store(&ServerCfgData{
+		TeamID: teamID,
+		Server: host,
+	})
+	if err != nil {
+		hlog.FromRequest(r).Error().
+			Err(err).
+			Msg("configuring server")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "Your team's conferences will now be hosted on %s\nRun `/jitsi server default` if you'd like to continue using https://meet.jit.si", host)
+}
+
+func (s *SlashCommandHandlers) dispatchInvites(w http.ResponseWriter, r *http.Request) {
+	// Generate the meeting data.
+	teamID := r.PostFormValue("team_id")
+	teamName := r.PostFormValue("team_domain")
+	meeting, err := s.MeetingGenerator.New(teamID, teamName)
+	if err != nil {
+		hlog.FromRequest(r).Error().
+			Err(err).
+			Msg("generating meeting")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// If nobody was @-mentioned then just send a generic invite to the channel.
+	text := r.PostFormValue("text")
+	matches := atMentionRE.FindAllStringSubmatch(text, -1)
+	if matches == nil {
+		w.Header().Set("Content-type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		resp := fmt.Sprintf(roomTemplate, meeting.Host, meeting.Host, meeting.URL)
+		w.Write([]byte(resp))
+		return
+	}
+
+	// Grab a oauth token for the slack workspace.
 	token, err := s.TokenReader.GetFirstBotTokenForTeam(teamID)
 	if err != nil {
 		switch err.Error() {
@@ -192,26 +199,10 @@ func (s *SlashCommandHandlers) Jitsi(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	room := RandomName()
-	matches := atMentionRE.FindAllStringSubmatch(text, -1)
-	if matches == nil {
-		meetingURL := fmt.Sprintf(
-			"%s/%s/%s",
-			s.ConferenceHost,
-			strings.ToLower(teamName),
-			room,
-		)
-
-		w.Header().Set("Content-type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		resp := fmt.Sprintf(roomTemplate, meetingURL, meetingURL, meetingURL)
-		w.Write([]byte(resp))
-		return
-	}
-
-	slackClient := slack.New(token)
+	// Dispatch a personal invite to each user @-mentioned.
+	callerID := r.PostFormValue("user_id")
 	for _, match := range matches {
-		err = s.inviteUser(slackClient, callerID, match[1], teamID, teamName, room)
+		err = sendPersonalizedInvite(token, callerID, match[1], &meeting)
 		if err != nil {
 			switch err.Error() {
 			case errInvalidAuth, errInactiveAccount, errMissingAuthToken:
@@ -229,40 +220,21 @@ func (s *SlashCommandHandlers) Jitsi(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	callerInfo, err := slackClient.GetUserInfo(callerID)
+	// Create a personalized response for the meeting initiator.
+	resp, err := joinPersonalMeetingMsg(token, callerID, &meeting)
 	if err != nil {
 		switch err.Error() {
 		case errInvalidAuth, errInactiveAccount, errMissingAuthToken:
 			install(w, s.SharableURL)
+			return
 		default:
 			hlog.FromRequest(r).Error().
 				Err(err).
-				Msg("retrieving user info from slack")
-			w.WriteHeader(http.StatusInternalServerError)
+				Msg("inviting user")
 		}
-		return
 	}
-	callerToken, err := s.TokenGenerator.CreateJWT(
-		strings.ToLower(teamID),
-		strings.ToLower(teamName),
-		room,
-		callerID,
-		callerInfo.Name,
-		callerInfo.Profile.Image192,
-	)
-
-	callerConfURL := fmt.Sprintf(
-		"%s/%s/%s?jwt=%s",
-		s.ConferenceHost,
-		strings.ToLower(teamName),
-		room,
-		callerToken,
-	)
-
-	// TODO: determine what's an error that gets exposed to the user.
 	w.Header().Set("Content-type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	resp := fmt.Sprintf(userTemplate, callerConfURL)
 	w.Write([]byte(resp))
 }
 
@@ -352,7 +324,7 @@ func (o *SlackOAuthHandlers) Auth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var access accessResponse
-	if err := json.NewDecoder(resp.Body).Decode(&access); err != nil {
+	if err = json.NewDecoder(resp.Body).Decode(&access); err != nil {
 		hlog.FromRequest(r).Error().
 			Err(err).
 			Msg("unable to decode slack access response")
