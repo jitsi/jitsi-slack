@@ -3,6 +3,7 @@ package jitsi
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -24,6 +25,7 @@ const (
 	errInvalidAuth      = "invalid_auth"
 	errInactiveAccount  = "account_inactive"
 	errMissingAuthToken = "not_authed"
+	errCannotDMBot      = "cannot_dm_bot"
 )
 
 var atMentionRE = regexp.MustCompile(`<@([^>|]+)`)
@@ -214,6 +216,10 @@ func (s *SlashCommandHandlers) Jitsi(w http.ResponseWriter, r *http.Request) {
 			case errInvalidAuth, errInactiveAccount, errMissingAuthToken:
 				install(w, s.SharableURL)
 				return
+			case errCannotDMBot:
+				hlog.FromRequest(r).Warn().
+					Err(err).
+					Msg("inviting user")
 			default:
 				hlog.FromRequest(r).Error().
 					Err(err).
@@ -301,10 +307,10 @@ func (o *SlackOAuthHandlers) Auth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if params["error"] != nil {
-		hlog.FromRequest(r).Error().
-			Err(err).
+		hlog.FromRequest(r).Warn().
+			Err(errors.New(params["error"][0])).
 			Msg("error response user declined install")
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 
@@ -342,10 +348,9 @@ func (o *SlackOAuthHandlers) Auth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !access.OK {
-		hlog.FromRequest(r).Error().
-			Err(err).
+		hlog.FromRequest(r).Warn().
 			Msg("access not ok")
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusForbidden)
 		return
 	}
 
