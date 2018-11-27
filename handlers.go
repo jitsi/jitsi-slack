@@ -26,6 +26,7 @@ const (
 	errInactiveAccount  = "account_inactive"
 	errMissingAuthToken = "not_authed"
 	errCannotDMBot      = "cannot_dm_bot"
+	errAccessDenied     = "access_denied"
 )
 
 var atMentionRE = regexp.MustCompile(`<@([^>|]+)`)
@@ -306,12 +307,24 @@ func (o *SlackOAuthHandlers) Auth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// An error is received when a user declines to install
+	// or an unexpected issue occurs. The app treats a
+	// declined install gracefully.
 	if params["error"] != nil {
-		hlog.FromRequest(r).Warn().
-			Err(errors.New(params["error"][0])).
-			Msg("error response user declined install")
-		w.WriteHeader(http.StatusOK)
-		return
+		switch params["error"][0] {
+		case errAccessDenied:
+			hlog.FromRequest(r).Info().
+				Err(errors.New(params["error"][0])).
+				Msg("user declined install")
+			w.WriteHeader(http.StatusOK)
+			return
+		default:
+			hlog.FromRequest(r).Error().
+				Err(errors.New(params["error"][0])).
+				Msg("failed install")
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 	}
 
 	code := params["code"]
