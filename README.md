@@ -50,11 +50,6 @@ Features are being worked on that assist with local development that remove the 
 
 Clone this project and build with `go build cmd/api/main.go` or build and run with `go run cmd/api/main.go`
 
-## Deployment
-
-A static binary is compiled and copied into a docker image using the script, `./build_docker_image.sh jitsi-slack`, will compile the binary and build a docker image with the
-tag `jitsi-slack`
-
 ## Dependency Management
 
 Dependency management for this project uses go module as of go version 1.11. More information can be found at [go command documetation](https://golang.org/cmd/go/#hdr-Modules__module_versions__and_more).
