@@ -32,8 +32,9 @@ type appCfg struct {
 	JitsiTokenAudience   string `env:"JITSI_TOKEN_AUD,required"`
 	JitsiConferenceHost  string `env:"JITSI_CONFERENCE_HOST,required"`
 	// dynamodb configuration
-	DynamoTable  string `env:"DYNAMO_TABLE,required"`
-	DynamoRegion string `env:"DYNAMO_REGION,required"`
+	TokenTable     string `env:"TOKEN_TABLE,required"`
+	ServerCfgTable string `env:"SERVER_CFG_TABLE,required"`
+	DynamoRegion   string `env:"DYNAMO_REGION,required"`
 	// application configuration
 	HTTPPort string `env:"HTTP_PORT" envDefault:"8080"`
 }
@@ -62,23 +63,41 @@ func main() {
 	}
 	svc := dynamodb.New(sess)
 	tokenStore := jitsi.TokenStore{
-		TableName: app.DynamoTable,
+		TableName: app.TokenTable,
 		DB:        svc,
+	}
+
+	authTenantSupportTest := func(srv string) bool {
+		if srv == app.JitsiConferenceHost {
+			return true
+		}
+		return false
+	}
+
+	srvCfgStore := jitsi.ServerCfgStore{
+		TableName:               app.ServerCfgTable,
+		DB:                      svc,
+		DefaultServer:           app.JitsiConferenceHost,
+		TenantScopedURLs:        authTenantSupportTest,
+		AuthenticatedURLSupport: authTenantSupportTest,
 	}
 
 	// Setup handlers for slash commands.
 	slashCmd := jitsi.SlashCommandHandlers{
-		ConferenceHost: app.JitsiConferenceHost,
-		TokenGenerator: jitsi.TokenGenerator{
-			Lifetime:   time.Hour * 24,
-			PrivateKey: app.JitsiTokenSigningKey,
-			Issuer:     app.JitsiTokenIssuer,
-			Audience:   app.JitsiTokenAudience,
-			Kid:        app.JitsiTokenKid,
+		MeetingGenerator: &jitsi.MeetingGenerator{
+			ServerConfigReader: &srvCfgStore,
+			MeetingTokenGenerator: jitsi.TokenGenerator{
+				Lifetime:   time.Hour * 24,
+				PrivateKey: app.JitsiTokenSigningKey,
+				Issuer:     app.JitsiTokenIssuer,
+				Audience:   app.JitsiTokenAudience,
+				Kid:        app.JitsiTokenKid,
+			},
 		},
 		SlackSigningSecret: app.SlackSigningSecret,
 		SharableURL:        app.SlackAppSharableURL,
 		TokenReader:        &tokenStore,
+		ServerConfigWriter: &srvCfgStore,
 	}
 
 	accessURL := "https://slack.com/api/oauth.access?client_id=%s&client_secret=%s&code=%s"

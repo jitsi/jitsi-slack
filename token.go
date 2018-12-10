@@ -17,24 +17,34 @@ type TokenGenerator struct {
 	Kid        string
 }
 
+// JWTInput is the input required to generate a meeting JWT for a user.
+type JWTInput struct {
+	TenantID   string
+	TenantName string
+	RoomClaim  string
+	UserID     string
+	UserName   string
+	AvatarURL  string
+}
+
 // CreateJWT generates conference tokens for auth'ed users.
-func (g TokenGenerator) CreateJWT(tenantID, tenantName, roomClaim, userID, userName, avatarURL string) (string, error) {
+func (g TokenGenerator) CreateJWT(in JWTInput) (string, error) {
 	now := time.Now()
 	exp := now.Add(g.Lifetime)
 	claims := jwt.MapClaims{
 		"iss":  g.Issuer,
 		"nbf":  now.Unix(),
 		"exp":  exp.Unix(),
-		"sub":  tenantName,
+		"sub":  in.TenantName,
 		"aud":  g.Audience,
-		"room": roomClaim,
+		"room": in.RoomClaim,
 		"context": contextClaim{
 			User: userClaim{
-				DisplayName: userName,
-				ID:          userID,
-				AvatarURL:   avatarURL,
+				DisplayName: in.UserName,
+				ID:          in.UserID,
+				AvatarURL:   in.AvatarURL,
 			},
-			Group: tenantName,
+			Group: in.TenantName,
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)

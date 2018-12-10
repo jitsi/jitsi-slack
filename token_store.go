@@ -96,8 +96,27 @@ func (t *TokenStore) Store(data *TokenData) error {
 	}
 
 	_, err := t.DB.PutItem(input)
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
+
+// func (t *TokenStore) SetServer(data *ServerCfgData) error {
+// 	input := &dynamodb.UpdateItemInput{
+// 		ExpressionAttributeNames: map[string]*string{
+// 			"#SRV": aws.String(KeyServer),
+// 		},
+// 		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
+// 			":s": {
+// 				S: aws.String(data.Server),
+// 			},
+// 		},
+// 		Key: map[string]*dynamodb.AttributeValue{
+// 			KeyTeamID: {
+// 				S: aws.String(data.TeamID),
+// 			},
+// 		},
+// 		TableName:        aws.String(t.TableName),
+// 		UpdateExpression: aws.String("SET #SRV = :s"),
+// 	}
+// 	_, err := t.DB.UpdateItem(input)
+// 	return err
+// }
