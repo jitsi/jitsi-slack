@@ -40,7 +40,7 @@ type TokenStore struct {
 }
 
 // GetFirstBotTokenForTeam retrieves the first bot token stored with the provided team id.
-func (t *TokenStore) GetFirstBotTokenForTeam(teamID string) (string, error) {
+func (t *TokenStore) GetTokenForTeam(teamID string) (*TokenData, error) {
 	teamIDKey := KeyTeamID
 	queryLimit := int64(1)
 	queryInput := &dynamodb.QueryInput{
@@ -53,23 +53,23 @@ func (t *TokenStore) GetFirstBotTokenForTeam(teamID string) (string, error) {
 			},
 		},
 		KeyConditionExpression: aws.String("#teamid = :v1"),
-		Limit: &queryLimit,
+		Limit:                  &queryLimit,
 	}
 	result, err := t.DB.Query(queryInput)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if len(result.Items) < 1 {
-		return "", errors.New(errMissingAuthToken)
+		return nil, errors.New(errMissingAuthToken)
 	}
 
-	d := TokenData{}
+	var d TokenData
 	err = dynamodbattribute.UnmarshalMap(result.Items[0], &d)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return d.BotToken, nil
+	return &d, nil
 }
 
 // Store will store access token data.
@@ -99,24 +99,16 @@ func (t *TokenStore) Store(data *TokenData) error {
 	return err
 }
 
-// func (t *TokenStore) SetServer(data *ServerCfgData) error {
-// 	input := &dynamodb.UpdateItemInput{
-// 		ExpressionAttributeNames: map[string]*string{
-// 			"#SRV": aws.String(KeyServer),
-// 		},
-// 		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-// 			":s": {
-// 				S: aws.String(data.Server),
-// 			},
-// 		},
-// 		Key: map[string]*dynamodb.AttributeValue{
-// 			KeyTeamID: {
-// 				S: aws.String(data.TeamID),
-// 			},
-// 		},
-// 		TableName:        aws.String(t.TableName),
-// 		UpdateExpression: aws.String("SET #SRV = :s"),
-// 	}
-// 	_, err := t.DB.UpdateItem(input)
-// 	return err
-// }
+// Remove will remove access token data for the user.
+func (t *TokenStore) Remove(userID string) error {
+	input := &dynamodb.DeleteItemInput{
+		Key: map[string]*dynamodb.AttributeValue{
+			KeyUserID: {
+				S: aws.String(userID),
+			},
+		},
+		TableName: aws.String(t.TableName),
+	}
+	_, err := t.DB.DeleteItem(input)
+	return err
+}

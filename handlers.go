@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/mitchellh/mapstructure"
 	"github.com/rs/zerolog/hlog"
 )
 
@@ -33,7 +34,7 @@ var (
 // TokenReader provides an interface for reading access token data from
 // a token store.
 type TokenReader interface {
-	GetFirstBotTokenForTeam(teamID string) (string, error)
+	GetTokenForTeam(teamID string) (*TokenData, error)
 }
 
 // ServerConfigWriter provides an interface for writing server configuration
@@ -80,12 +81,93 @@ func install(w http.ResponseWriter, sharableURL string) {
 	w.Write([]byte(installMsg))
 }
 
+type eventChallenge struct {
+	Token     string `mapstructure:"token"`
+	Challenge string `mapstructure:"challenge"`
+	Type      string `mapstructure:"type"`
+}
+
+type eventCallback struct {
+	Token string `mapstructure:"token"`
+	Event struct {
+		Type   string `mapstructure:"type"`
+		Tokens struct {
+			OAuth []string `mapstructure:"oauth"`
+			Bot   []string `mapstructure:"bot"`
+		} `mapstructure:"tokens"`
+	} `mapstructure:"event"`
+}
+
+// EventHandler is used to handle event callbacks from Slack api.
+type EventHandler struct {
+	SlackSigningSecret string
+	TokenWriter        TokenWriter
+}
+
+// Handle handles event callbacks for the integration.
+func (e *EventHandler) Handle(w http.ResponseWriter, r *http.Request) {
+	if !handleRequestValidation(w, r, e.SlackSigningSecret) {
+		return
+	}
+
+	var rawEvent map[string]interface{}
+	err := json.NewDecoder(r.Body).Decode(&rawEvent)
+	if err != nil {
+		hlog.FromRequest(r).Error().Err(err).Msg("evhandle")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	defer r.Body.Close()
+
+	eventType, ok := rawEvent["type"]
+	if !ok {
+		hlog.FromRequest(r).Error().Msg(fmt.Sprintf("unexpected: %#v", rawEvent))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	switch eventType {
+	case "url_verification":
+		var ev eventChallenge
+		err = mapstructure.Decode(rawEvent, &ev)
+		if err != nil {
+			hlog.FromRequest(r).Error().Err(err).Msg("challengemap")
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(ev.Challenge))
+	case "event_callback":
+		var ev eventCallback
+		err = mapstructure.Decode(rawEvent, &ev)
+		if err != nil {
+			hlog.FromRequest(r).Error().Err(err).Msg("challengemap")
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		for _, each := range ev.Event.Tokens.OAuth {
+			err := e.TokenWriter.Remove(each)
+			// Log the errors but don't provide a 500 because there's
+			// nothing slack will do anything and we should attempt to
+			// remove all of them.
+			if err != nil {
+				hlog.FromRequest(r).
+					Error().
+					Err(err).
+					Msg(fmt.Sprintf("removing for %s", each))
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
 // SlashCommandHandlers provides http handlers for Slack slash commands
 // that integrate with Jitsi Meet.
 type SlashCommandHandlers struct {
 	MeetingGenerator   *MeetingGenerator
 	SlackSigningSecret string
 	TokenReader        TokenReader
+	TokenWriter        TokenWriter
 	SharableURL        string
 	ServerConfigWriter ServerConfigWriter
 }
@@ -185,7 +267,7 @@ func (s *SlashCommandHandlers) dispatchInvites(w http.ResponseWriter, r *http.Re
 	}
 
 	// Grab a oauth token for the slack workspace.
-	token, err := s.TokenReader.GetFirstBotTokenForTeam(teamID)
+	token, err := s.TokenReader.GetTokenForTeam(teamID)
 	if err != nil {
 		switch err.Error() {
 		case errMissingAuthToken:
@@ -202,10 +284,20 @@ func (s *SlashCommandHandlers) dispatchInvites(w http.ResponseWriter, r *http.Re
 	// Dispatch a personal invite to each user @-mentioned.
 	callerID := r.PostFormValue("user_id")
 	for _, match := range matches {
-		err = sendPersonalizedInvite(token, callerID, match[1], &meeting)
+		err = sendPersonalizedInvite(token.BotToken, callerID, match[1], &meeting)
 		if err != nil {
 			switch err.Error() {
-			case errInvalidAuth, errInactiveAccount, errMissingAuthToken:
+			case errInactiveAccount, errMissingAuthToken:
+				install(w, s.SharableURL)
+				return
+			case errInvalidAuth:
+				err := s.TokenWriter.Remove(token.UserID)
+				if err != nil {
+					hlog.FromRequest(r).
+						Error().
+						Err(err).
+						Msg("removing invalid token")
+				}
 				install(w, s.SharableURL)
 				return
 			case errCannotDMBot:
@@ -221,7 +313,7 @@ func (s *SlashCommandHandlers) dispatchInvites(w http.ResponseWriter, r *http.Re
 	}
 
 	// Create a personalized response for the meeting initiator.
-	resp, err := joinPersonalMeetingMsg(token, callerID, &meeting)
+	resp, err := joinPersonalMeetingMsg(token.BotToken, callerID, &meeting)
 	if err != nil {
 		switch err.Error() {
 		case errInvalidAuth, errInactiveAccount, errMissingAuthToken:
@@ -242,6 +334,7 @@ func (s *SlashCommandHandlers) dispatchInvites(w http.ResponseWriter, r *http.Re
 // token store.
 type TokenWriter interface {
 	Store(data *TokenData) error
+	Remove(userID string) error
 }
 
 // SlackOAuthHandlers is used for handling Slack OAuth validation.
