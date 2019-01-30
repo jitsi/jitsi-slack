@@ -97,7 +97,13 @@ func main() {
 		SlackSigningSecret: app.SlackSigningSecret,
 		SharableURL:        app.SlackAppSharableURL,
 		TokenReader:        &tokenStore,
+		TokenWriter:        &tokenStore,
 		ServerConfigWriter: &srvCfgStore,
+	}
+
+	evHandle := jitsi.EventHandler{
+		SlackSigningSecret: app.SlackSigningSecret,
+		TokenWriter:        &tokenStore,
 	}
 
 	accessURL := "https://slack.com/api/oauth.access?client_id=%s&client_secret=%s&code=%s"
@@ -146,10 +152,12 @@ func main() {
 	// Wrap handlers with middleware chain.
 	slashJitsi := chain.ThenFunc(slashCmd.Jitsi)
 	slackOAuth := chain.ThenFunc(oauthHandler.Auth)
+	slackEvent := chain.ThenFunc(evHandle.Handle)
 
 	// Add routes and wrapped handlers to mux.
 	handler.Handle("/slash/jitsi", slashJitsi)
 	handler.Handle("/slack/auth", slackOAuth)
+	handler.Handle("/slack/event", slackEvent)
 	handler.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "health check passed")
