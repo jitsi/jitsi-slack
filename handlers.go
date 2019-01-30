@@ -106,10 +106,6 @@ type EventHandler struct {
 
 // Handle handles event callbacks for the integration.
 func (e *EventHandler) Handle(w http.ResponseWriter, r *http.Request) {
-	if !handleRequestValidation(w, r, e.SlackSigningSecret) {
-		return
-	}
-
 	var rawEvent map[string]interface{}
 	err := json.NewDecoder(r.Body).Decode(&rawEvent)
 	if err != nil {
