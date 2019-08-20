@@ -52,7 +52,7 @@ Clone this project and build with `go build cmd/api/main.go` or build and run wi
 
 ## Dependency Management
 
-Dependency management for this project uses go module as of go version 1.11. More information can be found at [go command documetation](https://golang.org/cmd/go/#hdr-Modules__module_versions__and_more).
+Dependency management for this project uses go module as of go version 1.11. More information can be found at [go command documentation](https://golang.org/cmd/go/#hdr-Modules__module_versions__and_more).
 
 ## Versioning
 
