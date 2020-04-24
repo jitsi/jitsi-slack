@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# This file :
+# 1.) Checks if there is a main binary present in the root.
+# 2.) Builds the binary if it is not present.
+# 3.) Builds a docker image . 
+
+# TODO :
+# - Extend the script to check image into ECR repo. 
 
 
 set -o errexit
