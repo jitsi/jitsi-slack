@@ -13,8 +13,13 @@ on your local machine for development purposes.
 ### Prerequisites
 
 #### Go
+
 A working setup for the Go Programming Language is needed. Here is a [getting started](https://golang.org/doc/install) guide. The project
 is currently using go version 1.11 along with module support.
+
+#### AWS
+
+The application leverages DynamoDB to store session tokens and server configuration. You would need access to an AWS environment and the CLI
 
 #### Slack
 
@@ -28,27 +33,31 @@ The slash command setup is `/jitsi` and the bot mention name is `@jitsi_meet`.
 
 ## Configuration
 
-```
+```bash
 SLACK_SIGNING_SECRET=<signing secret of slack app>
 SLACK_CLIENT_ID=<client id of slack app>
 SLACK_CLIENT_SECRET=<client secret of slack app>
 SLACK_APP_ID=<slack app id>
 SLACK_APP_SHARABLE_URL=<slack app url for sharing install>
-DYNAMO_TABLE=<dynamodb table name for storing oauth tokens>
+TOKEN_TABLE=<dynamodb table name for storing oauth tokens>
 DYNAMO_REGION=<dynamodb region used>
 JITSI_TOKEN_SIGNING_KEY=<key used to sign conference asap jwts>
 JITSI_TOKEN_KID=<key identifier for conference asap jwts>
 JITSI_TOKEN_ISS=<issuer for conference asap jwts>
 JITSI_TOKEN_AUD=<audience for conference asap jwts>
 JITSI_CONFERENCE_HOST=<conference hosting service i.e. https://meet.jit.si>
+TOKEN_TABLE_CONFIG="db_config/token_store.json"
+SERVER_TABLE_CONFIG="db_config/server_config.json"
 ```
 
 ## Development
+
 Features are being worked on that assist with local development that remove the need for dynamodb and support a developer's Slack workspace.
 
 ## Running
 
-Clone this project and build with `go build cmd/api/main.go` or build and run with `go run cmd/api/main.go`
+* Install dependencies and configure the required DynamoDB tables with `./set-up.sh`
+* Clone this project and build with `go build cmd/api/main.go` or build and run with `go run cmd/api/main.go`
 
 ## Dependency Management
 

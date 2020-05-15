@@ -1,0 +1,15 @@
+{
+    "TableName": "OAUTH",
+    "KeySchema": [
+      { "AttributeName": "user-id", "KeyType": "HASH" },
+      { "AttributeName": "team-id", "KeyType": "RANGE" }
+    ],
+    "AttributeDefinitions": [
+      { "AttributeName": "user-id", "AttributeType": "S" },
+      { "AttributeName": "team-id", "AttributeType": "S" }
+    ],
+    "ProvisionedThroughput": {
+      "ReadCapacityUnits": 5,
+      "WriteCapacityUnits": 5
+    }
+}

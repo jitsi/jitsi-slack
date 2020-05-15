@@ -1,0 +1,15 @@
+{
+    "TableName": "SERVER",
+    "KeySchema": [
+      { "AttributeName": "team-id", "KeyType": "HASH" },
+      { "AttributeName": "server", "KeyType": "RANGE" }
+    ],
+    "AttributeDefinitions": [
+      { "AttributeName": "team-id", "AttributeType": "S" },
+      { "AttributeName": "server", "AttributeType": "S" }
+    ],
+    "ProvisionedThroughput": {
+      "ReadCapacityUnits": 5,
+      "WriteCapacityUnits": 5
+    }
+}
