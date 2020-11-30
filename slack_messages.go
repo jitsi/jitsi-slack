@@ -80,21 +80,18 @@ func sendPersonalizedInvite(token, hostID, userID string, meeting *Meeting) erro
 		return err
 	}
 
-	params := slack.PostMessageParameters{
-		Attachments: []slack.Attachment{
-			slack.Attachment{
-				Fallback: msg,
-				Title:    msg,
-				Color:    "#3AA3E3",
-				Actions: []slack.AttachmentAction{
-					slack.AttachmentAction{
-						Name:  "join",
-						Text:  "Join",
-						Type:  "button",
-						Style: "primary",
-						URL:   meetingURL,
-					},
-				},
+	attachment := slack.Attachment{
+		Text:     "Join",
+		Fallback: msg,
+		Title:    msg,
+		Color:    "#3AA3E3",
+		Actions: []slack.AttachmentAction{
+			{
+				Name:  "join",
+				Text:  "Join",
+				Type:  "button",
+				Style: "primary",
+				URL:   meetingURL,
 			},
 		},
 	}
@@ -108,7 +105,7 @@ func sendPersonalizedInvite(token, hostID, userID string, meeting *Meeting) erro
 		return err
 	}
 
-	_, _, err = slackClient.PostMessage(channel.ID, "", params)
+	_, _, err = slackClient.PostMessage(channel.ID, slack.MsgOptionAttachments(attachment))
 	return err
 }
 

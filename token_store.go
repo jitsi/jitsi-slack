@@ -39,7 +39,7 @@ type TokenStore struct {
 	DB        *dynamodb.DynamoDB
 }
 
-// GetFirstBotTokenForTeam retrieves the first bot token stored with the provided team id.
+// GetTokenForTeam retrieves the first bot token stored with the provided team id.
 func (t *TokenStore) GetTokenForTeam(teamID string) (*TokenData, error) {
 	teamIDKey := KeyTeamID
 	queryLimit := int64(1)
