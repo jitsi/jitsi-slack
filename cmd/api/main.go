@@ -106,13 +106,15 @@ func main() {
 		TokenWriter:        &tokenStore,
 	}
 
+	accessV2URL := "https://slack.com/api/oauth.v2.access?client_id=%s&client_secret=%s&code=%s"
 	accessURL := "https://slack.com/api/oauth.access?client_id=%s&client_secret=%s&code=%s"
 	oauthHandler := jitsi.SlackOAuthHandlers{
-		AccessURLTemplate: accessURL,
-		ClientID:          app.SlackClientID,
-		ClientSecret:      app.SlackClientSecret,
-		AppID:             app.SlackAppID,
-		TokenWriter:       &tokenStore,
+		AccessURLTemplate:   accessURL,
+		AccessV2URLTemplate: accessV2URL,
+		ClientID:            app.SlackClientID,
+		ClientSecret:        app.SlackClientSecret,
+		AppID:               app.SlackAppID,
+		TokenWriter:         &tokenStore,
 	}
 
 	// Create an http mux and a server for that mux.
@@ -151,7 +153,7 @@ func main() {
 
 	// Wrap handlers with middleware chain.
 	slashJitsi := chain.ThenFunc(slashCmd.Jitsi)
-	slackOAuth := chain.ThenFunc(oauthHandler.Auth)
+	slackOAuth := chain.ThenFunc(oauthHandler.AuthV2)
 	slackEvent := chain.ThenFunc(evHandle.Handle)
 
 	// Add routes and wrapped handlers to mux.

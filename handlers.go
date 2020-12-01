@@ -335,16 +335,30 @@ type TokenWriter interface {
 
 // SlackOAuthHandlers is used for handling Slack OAuth validation.
 type SlackOAuthHandlers struct {
-	AccessURLTemplate string
-	ClientID          string
-	ClientSecret      string
-	AppID             string
-	TokenWriter       TokenWriter
+	AccessURLTemplate   string
+	AccessV2URLTemplate string
+	ClientID            string
+	ClientSecret        string
+	AppID               string
+	TokenWriter         TokenWriter
 }
 
 type botToken struct {
 	BotUserID      string `json:"bot_user_id"`
 	BotAccessToken string `json:"bot_access_token"`
+}
+
+type accessResponseV2 struct {
+	OK         bool `json:"ok"`
+	AuthedUser struct {
+		ID          string `json:"id"`
+		AccessToken string `json:"access_token"`
+	} `json:"authed_user"`
+	Team struct {
+		ID string `json:"id"`
+	} `json:"team"`
+	BotUserID      string `json:"bot_user_id"`
+	BotAccessToken string `json:"access_token"`
 }
 
 type accessResponse struct {
@@ -355,6 +369,96 @@ type accessResponse struct {
 	TeamName    string   `json:"team_name"`
 	TeamID      string   `json:"team_id"`
 	Bot         botToken `json:"bot"`
+}
+
+// AuthV2 is used for Slack's v2 of OAuth 2.0 with granular scopes.
+func (o *SlackOAuthHandlers) AuthV2(w http.ResponseWriter, r *http.Request) {
+	params, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		hlog.FromRequest(r).Error().
+			Err(err).
+			Msg("parsing query params")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// An error is received when a user declines to install
+	// or an unexpected issue occurs. The app treats a
+	// declined install gracefully.
+	if params["error"] != nil {
+		switch params["error"][0] {
+		case errAccessDenied:
+			hlog.FromRequest(r).Info().
+				Err(errors.New(params["error"][0])).
+				Msg("user declined install")
+			w.WriteHeader(http.StatusOK)
+			return
+		default:
+			hlog.FromRequest(r).Error().
+				Err(errors.New(params["error"][0])).
+				Msg("failed install")
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+	}
+
+	code := params["code"]
+	if len(code) != 1 {
+		hlog.FromRequest(r).Error().
+			Err(err).
+			Msg("code not provided")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// TODO: inject an http client with http logging.
+	resp, err := http.Get(fmt.Sprintf(
+		o.AccessV2URLTemplate,
+		o.ClientID,
+		o.ClientSecret,
+		code[0],
+	))
+	if err != nil {
+		hlog.FromRequest(r).Error().
+			Err(err).
+			Msg("oauth req error")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	var access accessResponseV2
+	if err = json.NewDecoder(resp.Body).Decode(&access); err != nil {
+		hlog.FromRequest(r).Error().
+			Err(err).
+			Msg("unable to decode slack access response")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	if !access.OK {
+		hlog.FromRequest(r).Warn().
+			Msg("access not ok")
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+
+	err = o.TokenWriter.Store(&TokenData{
+		TeamID:      access.Team.ID,
+		UserID:      access.AuthedUser.ID,
+		BotToken:    access.BotAccessToken,
+		BotUserID:   access.BotUserID,
+		AccessToken: access.AuthedUser.AccessToken,
+	})
+	if err != nil {
+		hlog.FromRequest(r).Error().
+			Err(err).
+			Msg("unable to store token")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	redirect := fmt.Sprintf("https://slack.com/app_redirect?app=%s", o.AppID)
+	http.Redirect(w, r, redirect, http.StatusFound)
 }
 
 // Auth validates OAuth access tokens.
