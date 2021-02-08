@@ -20,6 +20,9 @@ using go version 1.15 along with module support.
 
 #### Slack
 
+NOTE: This project uses the original outdated Slack OAUTH 2.0 flow. Work is in
+progress to update this to use Slack's V2 OAUTH 2.0 flow.
+
 A slack account needs to be created as well as an
 [app](https://api.slack.com/apps). The app created is intended for
 development purposes. The following functionality must be enabled in the `Add
@@ -60,7 +63,7 @@ with `go run cmd/api/main.go`
 
 ## Dependency Management
 
-Dependency management for this project uses go module as of go version 1.11.
+Dependency management for this project uses go module as of go version 1.15.
 More information can be found at [go command
 documentation](https://golang.org/cmd/go/#hdr-Modules__module_versions__and_more).
 
