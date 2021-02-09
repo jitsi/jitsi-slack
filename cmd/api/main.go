@@ -106,13 +106,11 @@ func main() {
 		TokenWriter:        &tokenStore,
 	}
 
-	accessURL := "https://slack.com/api/oauth.access?client_id=%s&client_secret=%s&code=%s"
 	oauthHandler := jitsi.SlackOAuthHandlers{
-		AccessURLTemplate: accessURL,
-		ClientID:          app.SlackClientID,
-		ClientSecret:      app.SlackClientSecret,
-		AppID:             app.SlackAppID,
-		TokenWriter:       &tokenStore,
+		ClientID:     app.SlackClientID,
+		ClientSecret: app.SlackClientSecret,
+		AppID:        app.SlackAppID,
+		TokenWriter:  &tokenStore,
 	}
 
 	// Create an http mux and a server for that mux.

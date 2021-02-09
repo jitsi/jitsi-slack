@@ -6,13 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"net/http"
+	"net/http" // DELETE
 	"net/url"
 	"regexp"
 	"strings"
 
 	"github.com/mitchellh/mapstructure"
 	"github.com/rs/zerolog/hlog"
+	"github.com/slack-go/slack"
 )
 
 const (
@@ -142,6 +143,7 @@ func (e *EventHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for _, each := range ev.Event.Tokens.OAuth {
+			// TODO: this does not appear to be working
 			err := e.TokenWriter.Remove(each)
 			// Log the errors but don't provide a 500 because there's
 			// nothing slack will do anything and we should attempt to
@@ -280,7 +282,7 @@ func (s *SlashCommandHandlers) dispatchInvites(w http.ResponseWriter, r *http.Re
 	// Dispatch a personal invite to each user @-mentioned.
 	callerID := r.PostFormValue("user_id")
 	for _, match := range matches {
-		err = sendPersonalizedInvite(token.BotToken, callerID, match[1], &meeting)
+		err = sendPersonalizedInvite(token.AccessToken, callerID, match[1], &meeting)
 		if err != nil {
 			switch err.Error() {
 			case errInactiveAccount, errMissingAuthToken:
@@ -299,17 +301,17 @@ func (s *SlashCommandHandlers) dispatchInvites(w http.ResponseWriter, r *http.Re
 			case errCannotDMBot:
 				hlog.FromRequest(r).Warn().
 					Err(err).
-					Msg("inviting user")
+					Msg("bot cannot DM")
 			default:
 				hlog.FromRequest(r).Error().
 					Err(err).
-					Msg("inviting user")
+					Msg("inviting user TEST: " + err.Error())
 			}
 		}
 	}
 
 	// Create a personalized response for the meeting initiator.
-	resp, err := joinPersonalMeetingMsg(token.BotToken, callerID, &meeting)
+	resp, err := joinPersonalMeetingMsg(token.AccessToken, callerID, &meeting)
 	if err != nil {
 		switch err.Error() {
 		case errInvalidAuth, errInactiveAccount, errMissingAuthToken:
@@ -318,7 +320,7 @@ func (s *SlashCommandHandlers) dispatchInvites(w http.ResponseWriter, r *http.Re
 		default:
 			hlog.FromRequest(r).Error().
 				Err(err).
-				Msg("inviting user")
+				Msg("personalized response")
 		}
 	}
 	w.Header().Set("Content-type", "application/json")
@@ -335,26 +337,10 @@ type TokenWriter interface {
 
 // SlackOAuthHandlers is used for handling Slack OAuth validation.
 type SlackOAuthHandlers struct {
-	AccessURLTemplate string
-	ClientID          string
-	ClientSecret      string
-	AppID             string
-	TokenWriter       TokenWriter
-}
-
-type botToken struct {
-	BotUserID      string `json:"bot_user_id"`
-	BotAccessToken string `json:"bot_access_token"`
-}
-
-type accessResponse struct {
-	OK          bool     `json:"ok"`
-	AccessToken string   `json:"access_token"`
-	Scope       string   `json:"scope"`
-	UserID      string   `json:"user_id"`
-	TeamName    string   `json:"team_name"`
-	TeamID      string   `json:"team_id"`
-	Bot         botToken `json:"bot"`
+	ClientID     string
+	ClientSecret string
+	AppID        string
+	TokenWriter  TokenWriter
 }
 
 // Auth validates OAuth access tokens.
@@ -397,13 +383,13 @@ func (o *SlackOAuthHandlers) Auth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: inject an http client with http logging.
-	resp, err := http.Get(fmt.Sprintf(
-		o.AccessURLTemplate,
+	resp, err := slack.GetOAuthV2Response(
+		http.DefaultClient,
 		o.ClientID,
 		o.ClientSecret,
 		code[0],
-	))
+		"")
+
 	if err != nil {
 		hlog.FromRequest(r).Error().
 			Err(err).
@@ -412,29 +398,13 @@ func (o *SlackOAuthHandlers) Auth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var access accessResponse
-	if err = json.NewDecoder(resp.Body).Decode(&access); err != nil {
-		hlog.FromRequest(r).Error().
-			Err(err).
-			Msg("unable to decode slack access response")
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	if !access.OK {
-		hlog.FromRequest(r).Warn().
-			Msg("access not ok")
-		w.WriteHeader(http.StatusForbidden)
-		return
-	}
-
 	err = o.TokenWriter.Store(&TokenData{
-		TeamID:      access.TeamID,
-		UserID:      access.UserID,
-		BotToken:    access.Bot.BotAccessToken,
-		BotUserID:   access.Bot.BotUserID,
-		AccessToken: access.AccessToken,
+		TeamID:      resp.Team.ID,
+		UserID:      resp.AuthedUser.ID,
+		AccessToken: resp.AccessToken,
 	})
+	// TODO consider more options like Enterprise.ID.Name
+
 	if err != nil {
 		hlog.FromRequest(r).Error().
 			Err(err).
