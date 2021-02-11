@@ -34,9 +34,10 @@ features and functionality` section of the slack app configuration:
   * set up '/jitsi' with: https://[server]/slash/jitsi
 * OAuth & Permissions
   * redirect URL: https://[server]/slack/auth
+  * Scopes: chat:write, commands, im:write, users:read
 * Event Subscriptions:
   * request URL: https://[server]/slack/event
-  * Subscribe to workspace events: 'tokens_revoked'
+  * Subscribe to workspace events: 'app_uninstalled'
 
 ## Configuration
 
