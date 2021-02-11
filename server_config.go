@@ -1,9 +1,12 @@
 package jitsi
 
 import (
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
+	"context"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
 const (
@@ -38,7 +41,7 @@ type ServerCfgStore struct {
 	// TableName is the name of the dynamo table where configuration is stored.
 	TableName string
 	// DB is the client used to access dynamodb.
-	DB *dynamodb.DynamoDB
+	DB *dynamodb.Client
 	// DefaultServer is the server host to use if none has been configured.
 	DefaultServer string
 	// TenantScopedURLs returns whether or not meeting urls should be
@@ -51,57 +54,50 @@ type ServerCfgStore struct {
 
 // Store will persist a portion of the server configuration for a team.
 func (s *ServerCfgStore) Store(data *ServerCfgData) error {
-	input := &dynamodb.PutItemInput{
-		Item: map[string]*dynamodb.AttributeValue{
-			KeyTeamIDSrvCfg: {
-				S: aws.String(data.TeamID),
-			},
-			KeyServer: {
-				S: aws.String(data.Server),
-			},
-		},
-		TableName: aws.String(s.TableName),
+	av, err := attributevalue.MarshalMap(data)
+	if err != nil {
+		return err
 	}
-
-	_, err := s.DB.PutItem(input)
+	_, err = s.DB.PutItem(context.TODO(), &dynamodb.PutItemInput{
+		TableName: aws.String(s.TableName),
+		Item:      av,
+	})
 	return err
 }
 
 // Remove will remove the persistent server configuration for a team. That
 // team will use the defaults if no configuration is stored for the team.
 func (s *ServerCfgStore) Remove(teamID string) error {
-	input := &dynamodb.DeleteItemInput{
-		Key: map[string]*dynamodb.AttributeValue{
-			KeyTeamIDSrvCfg: {
-				S: aws.String(teamID),
-			},
-		},
-		TableName: aws.String(s.TableName),
+	av, err := attributevalue.MarshalMap(map[string]string{KeyTeamIDSrvCfg: teamID})
+	if err != nil {
+		return err
 	}
-	_, err := s.DB.DeleteItem(input)
+	dii := &dynamodb.DeleteItemInput{
+		TableName: aws.String(s.TableName),
+		Key:       av,
+	}
+	_, err = s.DB.DeleteItem(context.TODO(), dii)
 	return err
 }
 
 // Get retrieves the server configuration for a team. This will provide
 // the default if no configuration is stored for the team.
 func (s *ServerCfgStore) Get(teamID string) (ServerCfg, error) {
-	teamIDKey := KeyTeamIDSrvCfg
-	queryInput := &dynamodb.QueryInput{
-		ExpressionAttributeNames: map[string]*string{"#teamid": &teamIDKey},
-		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-			":t": {
-				S: aws.String(teamID),
-			},
-		},
-		KeyConditionExpression: aws.String("#teamid = :t"),
-		TableName:              aws.String(s.TableName),
-	}
-
-	result, err := s.DB.Query(queryInput)
+	keyCond := expression.Key(KeyTeamIDSrvCfg).Equal(expression.Value(teamID))
+	builder := expression.NewBuilder().WithKeyCondition(keyCond)
+	expr, err := builder.Build()
 	if err != nil {
 		return ServerCfg{}, err
 	}
+	queryInput := &dynamodb.QueryInput{
+		KeyConditionExpression:    expr.KeyCondition(),
+		ExpressionAttributeNames:  expr.Names(),
+		ExpressionAttributeValues: expr.Values(),
+		TableName:                 aws.String(s.TableName),
+	}
+	result, err := s.DB.Query(context.TODO(), queryInput)
 
+	// return default server if an item is not found
 	if len(result.Items) < 1 {
 		cfg := ServerCfg{
 			Server:                  s.DefaultServer,
@@ -112,7 +108,7 @@ func (s *ServerCfgStore) Get(teamID string) (ServerCfg, error) {
 	}
 
 	var server string
-	err = dynamodbattribute.Unmarshal(result.Items[0][KeyServer], &server)
+	err = attributevalue.Unmarshal(result.Items[0][KeyServer], &server)
 	if err != nil {
 		return ServerCfg{}, err
 	}

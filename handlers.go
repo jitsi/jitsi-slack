@@ -6,14 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"net/http" // DELETE
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 
-	"github.com/mitchellh/mapstructure"
 	"github.com/rs/zerolog/hlog"
 	"github.com/slack-go/slack"
+	"github.com/slack-go/slack/slackevents"
 )
 
 const (
@@ -82,23 +82,6 @@ func install(w http.ResponseWriter, sharableURL string) {
 	w.Write([]byte(installMsg))
 }
 
-type eventChallenge struct {
-	Token     string `mapstructure:"token"`
-	Challenge string `mapstructure:"challenge"`
-	Type      string `mapstructure:"type"`
-}
-
-type eventCallback struct {
-	Token string `mapstructure:"token"`
-	Event struct {
-		Type   string `mapstructure:"type"`
-		Tokens struct {
-			OAuth []string `mapstructure:"oauth"`
-			Bot   []string `mapstructure:"bot"`
-		} `mapstructure:"tokens"`
-	} `mapstructure:"event"`
-}
-
 // EventHandler is used to handle event callbacks from Slack api.
 type EventHandler struct {
 	SlackSigningSecret string
@@ -106,57 +89,69 @@ type EventHandler struct {
 }
 
 // Handle handles event callbacks for the integration.
+// adapated from https://github.com/slack-go/slack/blob/master/examples/eventsapi/events.go
 func (e *EventHandler) Handle(w http.ResponseWriter, r *http.Request) {
-	var rawEvent map[string]interface{}
-	err := json.NewDecoder(r.Body).Decode(&rawEvent)
+	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		hlog.FromRequest(r).Error().Err(err).Msg("evhandle")
-		w.WriteHeader(http.StatusInternalServerError)
+		hlog.FromRequest(r).Warn().Err(err).Msg("evhandle: malformed request")
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 	defer r.Body.Close()
 
-	eventType, ok := rawEvent["type"]
-	if !ok {
-		hlog.FromRequest(r).Error().Msg(fmt.Sprintf("unexpected: %#v", rawEvent))
+	sv, err := slack.NewSecretsVerifier(r.Header, e.SlackSigningSecret)
+	if err != nil {
+		hlog.FromRequest(r).Warn().Err(err).Msg("evhandle: signature failed")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	if _, err := sv.Write(body); err != nil {
+		hlog.FromRequest(r).Warn().Err(err).Msg("evhandle: write failed")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	switch eventType {
-	case "url_verification":
-		var ev eventChallenge
-		err = mapstructure.Decode(rawEvent, &ev)
+	if err := sv.Ensure(); err != nil {
+		hlog.FromRequest(r).Warn().Err(err).Msg("evhandle: ensure failed")
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	eventsAPIEvent, err := slackevents.ParseEvent(json.RawMessage(body), slackevents.OptionNoVerifyToken())
+	if err != nil {
+		hlog.FromRequest(r).Warn().Err(err).Msg("evhandle: parse failed")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	if eventsAPIEvent.Type == slackevents.URLVerification {
+		var cr *slackevents.ChallengeResponse
+		err := json.Unmarshal([]byte(body), &cr)
 		if err != nil {
-			hlog.FromRequest(r).Error().Err(err).Msg("challengemap")
+			hlog.FromRequest(r).Warn().Err(err).Msg("evhandle: challenge resp failed")
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(ev.Challenge))
-	case "event_callback":
-		var ev eventCallback
-		err = mapstructure.Decode(rawEvent, &ev)
-		if err != nil {
-			hlog.FromRequest(r).Error().Err(err).Msg("challengemap")
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
+		w.Header().Set("Content-Type", "text")
+		w.Write([]byte(cr.Challenge))
+	}
 
-		for _, each := range ev.Event.Tokens.OAuth {
-			// TODO: this does not appear to be working
-			err := e.TokenWriter.Remove(each)
-			// Log the errors but don't provide a 500 because there's
-			// nothing slack will do anything and we should attempt to
-			// remove all of them.
-			if err != nil {
-				hlog.FromRequest(r).
-					Error().
-					Err(err).
-					Msg(fmt.Sprintf("removing for %s", each))
+	if eventsAPIEvent.Type == slackevents.CallbackEvent {
+		innerEvent := eventsAPIEvent.InnerEvent
+		switch innerEvent.Data.(type) {
+		case *slackevents.AppUninstalledEvent:
+			{
+				err := e.TokenWriter.Remove(eventsAPIEvent.TeamID)
+				// do not error out or return 500 since this failing is non-critical
+				if err != nil {
+					hlog.FromRequest(r).Warn().
+						Err(err).
+						Msg(fmt.Sprintf("app_uninstalled failed for: %s", eventsAPIEvent.TeamID))
+				}
 			}
 		}
-		w.WriteHeader(http.StatusOK)
 	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 // SlashCommandHandlers provides http handlers for Slack slash commands
@@ -289,13 +284,8 @@ func (s *SlashCommandHandlers) dispatchInvites(w http.ResponseWriter, r *http.Re
 				install(w, s.SharableURL)
 				return
 			case errInvalidAuth:
-				err := s.TokenWriter.Remove(token.UserID)
-				if err != nil {
-					hlog.FromRequest(r).
-						Error().
-						Err(err).
-						Msg("removing invalid token")
-				}
+				// this catches the case where a workspace has removed the app
+				// but someone tries to use the command anyways
 				install(w, s.SharableURL)
 				return
 			case errCannotDMBot:
@@ -332,7 +322,7 @@ func (s *SlashCommandHandlers) dispatchInvites(w http.ResponseWriter, r *http.Re
 // token store.
 type TokenWriter interface {
 	Store(data *TokenData) error
-	Remove(userID string) error
+	Remove(teamID string) error
 }
 
 // SlackOAuthHandlers is used for handling Slack OAuth validation.
@@ -400,10 +390,8 @@ func (o *SlackOAuthHandlers) Auth(w http.ResponseWriter, r *http.Request) {
 
 	err = o.TokenWriter.Store(&TokenData{
 		TeamID:      resp.Team.ID,
-		UserID:      resp.AuthedUser.ID,
 		AccessToken: resp.AccessToken,
 	})
-	// TODO consider more options like Enterprise.ID.Name
 
 	if err != nil {
 		hlog.FromRequest(r).Error().

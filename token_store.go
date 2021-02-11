@@ -1,71 +1,64 @@
 package jitsi
 
 import (
+	"context"
 	"errors"
-	"fmt"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
 const (
-	// KeyTeamID is the dynamo key for storing the team id.
-	// this key is set as the secondary index.
-	KeyTeamID = "team-id"
-	// KeyUserID is the dynamo key for storing the user id.
-	// this is the primary.
-	KeyUserID = "user-id"
-	// KeyBotToken is the dynamo key for storing the bot token.
-	KeyBotToken = "bot-token"
-	// KeyBotUserID is the dynamo key for storing the bot user id.
-	KeyBotUserID = "bot-user-id"
-	// KeyAccessToken is the dynamo ke for storing the access token.
-	KeyAccessToken = "access-token"
+	KeyTeamID      = "team-id"      // primary key; slack team id
+	KeyAccessToken = "access-token" // oauth access token
 )
 
 // TokenData is the access token data stored from oauth.
 type TokenData struct {
 	TeamID      string `json:"team-id"`
-	UserID      string `json:"user-id"`
-	BotToken    string `json:"bot-token"`
-	BotUserID   string `json:"bot-user-id"`
 	AccessToken string `json:"access-token"`
 }
 
 // TokenStore stores and retrieves access tokens from aws dynamodb.
 type TokenStore struct {
 	TableName string
-	DB        *dynamodb.DynamoDB
+	DB        *dynamodb.Client
 }
 
-// GetFirstBotTokenForTeam retrieves the first bot token stored with the provided team id.
+// GetToken retrieves the access token stored with the provided team id.
 func (t *TokenStore) GetTokenForTeam(teamID string) (*TokenData, error) {
-	teamIDKey := KeyTeamID
-	queryLimit := int64(1)
-	queryInput := &dynamodb.QueryInput{
-		TableName:                aws.String(t.TableName),
-		IndexName:                aws.String(fmt.Sprintf("%s-index", KeyTeamID)),
-		ExpressionAttributeNames: map[string]*string{"#teamid": &teamIDKey},
-		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-			":v1": {
-				S: aws.String(teamID),
-			},
-		},
-		KeyConditionExpression: aws.String("#teamid = :v1"),
-		Limit:                  &queryLimit,
-	}
-	result, err := t.DB.Query(queryInput)
+	keyCond := expression.Key(KeyTeamID).Equal(expression.Value(teamID))
+	builder := expression.NewBuilder().WithKeyCondition(keyCond)
+	expr, err := builder.Build()
 	if err != nil {
 		return nil, err
 	}
+	queryInput := &dynamodb.QueryInput{
+		KeyConditionExpression:    expr.KeyCondition(),
+		ExpressionAttributeNames:  expr.Names(),
+		ExpressionAttributeValues: expr.Values(),
+		TableName:                 aws.String(t.TableName),
+	}
+	result, err := t.DB.Query(context.TODO(), queryInput)
+	if err != nil {
+		return nil, err
+	}
+
+	// "level":"error","ip":"10.188.4.136","user_agent":"Slackbot 1.0
+	// (+https://api.slack.com/robots)","req_id":"c0in2pmpv07sokmae1sg","error":"operation
+	// error DynamoDB: Query, https response error StatusCode: 400, RequestID:
+	// KJRPD5I60LO2C1ULUE9P2FB14NVV4KQNSO5AEMVJF66Q9ASUAAJG, api error
+	// ValidationException: Query condition missed key schema element:
+	// user-id","time":"2021-02-11T18:03:18Z","message":"retrieving token"}
 
 	if len(result.Items) < 1 {
 		return nil, errors.New(errMissingAuthToken)
 	}
 
 	var d TokenData
-	err = dynamodbattribute.UnmarshalMap(result.Items[0], &d)
+	err = attributevalue.UnmarshalMap(result.Items[0], &d)
 	if err != nil {
 		return nil, err
 	}
@@ -74,41 +67,29 @@ func (t *TokenStore) GetTokenForTeam(teamID string) (*TokenData, error) {
 
 // Store will store access token data.
 func (t *TokenStore) Store(data *TokenData) error {
-	input := &dynamodb.PutItemInput{
-		Item: map[string]*dynamodb.AttributeValue{
-			KeyTeamID: {
-				S: aws.String(data.TeamID),
-			},
-			KeyUserID: {
-				S: aws.String(data.UserID),
-			},
-			KeyBotToken: {
-				S: aws.String(data.BotToken),
-			},
-			KeyBotUserID: {
-				S: aws.String(data.BotUserID),
-			},
-			KeyAccessToken: {
-				S: aws.String(data.AccessToken),
-			},
-		},
-		TableName: aws.String(t.TableName),
+	av, err := attributevalue.MarshalMap(map[string]string{
+		KeyTeamID:      data.TeamID,
+		KeyAccessToken: data.AccessToken,
+	})
+	if err != nil {
+		return err
 	}
-
-	_, err := t.DB.PutItem(input)
+	_, err = t.DB.PutItem(context.TODO(), &dynamodb.PutItemInput{
+		TableName: aws.String(t.TableName),
+		Item:      av,
+	})
 	return err
 }
 
 // Remove will remove access token data for the user.
-func (t *TokenStore) Remove(userID string) error {
-	input := &dynamodb.DeleteItemInput{
-		Key: map[string]*dynamodb.AttributeValue{
-			KeyUserID: {
-				S: aws.String(userID),
-			},
-		},
+func (t *TokenStore) Remove(teamID string) error {
+	av, err := attributevalue.MarshalMap(map[string]string{
+		KeyTeamID: teamID,
+	})
+	dii := &dynamodb.DeleteItemInput{
 		TableName: aws.String(t.TableName),
+		Key:       av,
 	}
-	_, err := t.DB.DeleteItem(input)
+	_, err = t.DB.DeleteItem(context.TODO(), dii)
 	return err
 }
