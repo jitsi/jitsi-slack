@@ -46,13 +46,6 @@ func (t *TokenStore) GetTokenForTeam(teamID string) (*TokenData, error) {
 		return nil, err
 	}
 
-	// "level":"error","ip":"10.188.4.136","user_agent":"Slackbot 1.0
-	// (+https://api.slack.com/robots)","req_id":"c0in2pmpv07sokmae1sg","error":"operation
-	// error DynamoDB: Query, https response error StatusCode: 400, RequestID:
-	// KJRPD5I60LO2C1ULUE9P2FB14NVV4KQNSO5AEMVJF66Q9ASUAAJG, api error
-	// ValidationException: Query condition missed key schema element:
-	// user-id","time":"2021-02-11T18:03:18Z","message":"retrieving token"}
-
 	if len(result.Items) < 1 {
 		return nil, errors.New(errMissingAuthToken)
 	}
