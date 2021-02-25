@@ -2,6 +2,7 @@ package jitsi
 
 import (
 	"crypto/x509"
+	"errors"
 	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
@@ -55,12 +56,25 @@ func (g TokenGenerator) CreateJWT(in JWTInput) (string, error) {
 		return "", err
 	}
 
-	privateKey, err := x509.ParsePKCS1PrivateKey(data.Data) // changed from ParsePKCS8PrivateKey
-	if err != nil {
-		return "", err
+	switch data.ContentType() {
+	case "application/pkcs1":
+		{
+			privateKey, err := x509.ParsePKCS1PrivateKey(data.Data)
+			if err != nil {
+				return "", err
+			}
+			return token.SignedString(privateKey)
+		}
+	case "application/pkcs8":
+		{
+			privateKey, err := x509.ParsePKCS8PrivateKey(data.Data)
+			if err != nil {
+				return "", err
+			}
+			return token.SignedString(privateKey)
+		}
 	}
-
-	return token.SignedString(privateKey)
+	return "", errors.New("unsupported key type")
 }
 
 type userClaim struct {
