@@ -196,6 +196,11 @@ func (s *SlashCommandHandlers) configureServer(w http.ResponseWriter, r *http.Re
 
 	// First check if the default is being requested.
 	configuration := strings.Split(text, " ")
+	if len(configuration) < 2 {
+		fmt.Fprintf(w, "Run '/jitsi server default' or '/jitsi server [url]' with the URL of your team's server")
+		return
+	}
+
 	if configuration[1] == "default" {
 		err := s.ServerConfigWriter.Remove(teamID)
 		if err != nil {
@@ -264,6 +269,9 @@ func (s *SlashCommandHandlers) dispatchInvites(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		switch err.Error() {
 		case errMissingAuthToken:
+			hlog.FromRequest(r).Info().
+				Err(err).
+				Msg("missing auth token")
 			install(w, s.SharableURL)
 		default:
 			hlog.FromRequest(r).Error().
@@ -281,11 +289,17 @@ func (s *SlashCommandHandlers) dispatchInvites(w http.ResponseWriter, r *http.Re
 		if err != nil {
 			switch err.Error() {
 			case errInactiveAccount, errMissingAuthToken:
+				hlog.FromRequest(r).Info().
+					Err(err).
+					Msg(fmt.Sprintf("inactive or missing auth token"))
 				install(w, s.SharableURL)
 				return
 			case errInvalidAuth:
-				// this catches the case where a workspace has removed the app
-				// but someone tries to use the command anyways
+				// catches the case where a workspace has removed the app but
+				// someone tries to use the command anyways
+				hlog.FromRequest(r).Info().
+					Err(err).
+					Msg("invalid auth")
 				install(w, s.SharableURL)
 				return
 			case errCannotDMBot:
@@ -295,7 +309,7 @@ func (s *SlashCommandHandlers) dispatchInvites(w http.ResponseWriter, r *http.Re
 			default:
 				hlog.FromRequest(r).Error().
 					Err(err).
-					Msg("inviting user TEST: " + err.Error())
+					Msg("unexpected sendPersonalizedInvite error")
 			}
 		}
 	}
@@ -305,12 +319,15 @@ func (s *SlashCommandHandlers) dispatchInvites(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		switch err.Error() {
 		case errInvalidAuth, errInactiveAccount, errMissingAuthToken:
+			hlog.FromRequest(r).Info().
+				Err(err).
+				Msg("joinPersonalMeetingMsg invalid or missing token")
 			install(w, s.SharableURL)
 			return
 		default:
 			hlog.FromRequest(r).Error().
 				Err(err).
-				Msg("personalized response")
+				Msg("joinPersonalizedMeetingMsg error")
 		}
 	}
 	w.Header().Set("Content-type", "application/json")
