@@ -55,7 +55,7 @@ func (g TokenGenerator) CreateJWT(in JWTInput) (string, error) {
 		return "", err
 	}
 
-	privateKey, err := x509.ParsePKCS8PrivateKey(data.Data)
+	privateKey, err := x509.ParsePKCS1PrivateKey(data.Data) // changed from ParsePKCS8PrivateKey
 	if err != nil {
 		return "", err
 	}
