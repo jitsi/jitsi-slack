@@ -57,6 +57,11 @@ JITSI_TOKEN_AUD=<audience for conference asap jwts>
 JITSI_CONFERENCE_HOST=<conference hosting service i.e. https://meet.jit.si>
 ```
 
+Note that `JITSI_TOKEN_SIGNING_KEY` is a dataurl that contains a
+base64-encoded PKCS1 or PKCS8 key, and should look something like:
+
+```data:application/pkcs1;kid=[urlencoded kid];base64,[base64 pkcs1 key]```
+
 ## Running
 
 Clone this project and build with `go build cmd/api/main.go` or build and run
