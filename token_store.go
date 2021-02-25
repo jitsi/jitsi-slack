@@ -50,12 +50,16 @@ func (t *TokenStore) GetTokenForTeam(teamID string) (*TokenData, error) {
 		return nil, errors.New(errMissingAuthToken)
 	}
 
-	var d TokenData
-	err = attributevalue.UnmarshalMap(result.Items[0], &d)
+	var token string
+	err = attributevalue.Unmarshal(result.Items[0][KeyAccessToken], &token)
 	if err != nil {
 		return nil, err
 	}
-	return &d, nil
+
+	return &TokenData{
+		TeamID:      teamID,
+		AccessToken: token,
+	}, nil
 }
 
 // Store will store access token data.
