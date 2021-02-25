@@ -12,9 +12,9 @@ import (
 const (
 	// KeyTeamIDSrvCfg is the dynamo key for storing the team id.
 	// This key is the primary index.
-	KeyTeamIDSrvCfg = "teamID"
+	KeyTeamIDSrvCfg = "team-id"
 	// KeyServer is the dynamo key for storing the configured server.
-	KeyServer = "server"
+	KeyServer = "server-url"
 )
 
 // ServerCfg is the server configuration for a team.
@@ -32,8 +32,8 @@ type ServerCfg struct {
 
 // ServerCfgData is the server configuration data that is stored for teams.
 type ServerCfgData struct {
-	TeamID string `json:"teamID"`
-	Server string `json:"server"`
+	TeamID string `json:"team-id"`
+	Server string `json:"server-url"`
 }
 
 // ServerCfgStore is used to store server configuration for teams.
@@ -54,7 +54,10 @@ type ServerCfgStore struct {
 
 // Store will persist a portion of the server configuration for a team.
 func (s *ServerCfgStore) Store(data *ServerCfgData) error {
-	av, err := attributevalue.MarshalMap(data)
+	av, err := attributevalue.MarshalMap(map[string]string{
+		KeyTeamIDSrvCfg: data.TeamID,
+		KeyServer:       data.Server,
+	})
 	if err != nil {
 		return err
 	}
