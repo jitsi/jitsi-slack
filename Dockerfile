@@ -1,9 +1,9 @@
 FROM alpine:latest as alpine
 
-RUN apk add -U --no-cache ca-certificates
+RUN apk add -U --no-cache bash ca-certificates jq
 
-FROM scratch
-COPY --from=alpine /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 ADD main /
-CMD ["/main"]
+COPY build/run.sh /
+
+CMD ["/run.sh"]
 EXPOSE 8080
