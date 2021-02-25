@@ -21,7 +21,7 @@ require (
 	github.com/smartystreets/assertions v0.0.0-20190116191733-b6c0e53d7304 // indirect
 	github.com/smartystreets/goconvey v0.0.0-20181108003508-044398e4856c // indirect
 	github.com/stretchr/testify v1.3.0 // indirect
-	github.com/vincent-petithory/dataurl v0.0.0-20160330182126-9a301d65acbb
+	github.com/vincent-petithory/dataurl v0.0.0-20191104211930-d1553a71de50
 	github.com/zenazn/goji v0.0.0-20160507202103-64eb34159fe5 // indirect
 	gopkg.in/ini.v1 v1.41.0 // indirect
 )

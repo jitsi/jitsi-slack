@@ -80,6 +80,8 @@ github.com/stretchr/testify v1.3.0 h1:TivCn/peBQ7UY8ooIcPgZFpTNSz0Q2U6UrFlUfqbe0
 github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UVUgZn+9EI=
 github.com/vincent-petithory/dataurl v0.0.0-20160330182126-9a301d65acbb h1:lyL3z7vYwTWXf4/bI+A01+cCSnfhKIBhy+SQ46Z/ml8=
 github.com/vincent-petithory/dataurl v0.0.0-20160330182126-9a301d65acbb/go.mod h1:FHafX5vmDzyP+1CQATJn7WFKc9CvnvxyvZy6I1MrG/U=
+github.com/vincent-petithory/dataurl v0.0.0-20191104211930-d1553a71de50 h1:uxE3GYdXIOfhMv3unJKETJEhw78gvzuQqRX/rVirc2A=
+github.com/vincent-petithory/dataurl v0.0.0-20191104211930-d1553a71de50/go.mod h1:FHafX5vmDzyP+1CQATJn7WFKc9CvnvxyvZy6I1MrG/U=
 github.com/zenazn/goji v0.0.0-20160507202103-64eb34159fe5 h1:u8oGm2Ef+uUdJIbBXJvdPqKeo1u8NPGMtWH521eW2xA=
 github.com/zenazn/goji v0.0.0-20160507202103-64eb34159fe5/go.mod h1:7S9M489iMyHBNxwZnk9/EHS098H4/F6TATF2mIxtB1Q=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
