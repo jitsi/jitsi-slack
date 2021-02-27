@@ -99,6 +99,9 @@ func (s *ServerCfgStore) Get(teamID string) (ServerCfg, error) {
 		TableName:                 aws.String(s.TableName),
 	}
 	result, err := s.DB.Query(context.TODO(), queryInput)
+	if err != nil {
+		return ServerCfg{}, err
+	}
 
 	// return default server if an item is not found
 	if len(result.Items) < 1 {

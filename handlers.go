@@ -111,7 +111,7 @@ func (e *EventHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := sv.Ensure(); err != nil {
-		hlog.FromRequest(r).Warn().Err(err).Msg("evhandle: ensure failed")
+		hlog.FromRequest(r).Warn().Err(err).Msg("ensure failed: secrets may be not loading")
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
