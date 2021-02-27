@@ -53,10 +53,7 @@ const (
 	}`
 	installMessage = `{
 		"response_type":"ephemeral",
-		"text":"The Jitsi Meet app needs to be reinstalled to support updated
-			Slack app APIs. Please ask your Slack admin to reinstall the app by
-			going to 'manage apps', select Jitsi Meet, then 'Remove App' and
-			immediately 'Add to Slack'.",
+		"text":"The Jitsi Meet app needs to be reinstalled to support updated Slack app APIs. Please ask your Slack admin to reinstall the app by going to 'manage apps', select Jitsi Meet, then 'Remove App' and immediately 'Add to Slack'.",
 		"attachments":[{"text":"%s"}]
 	}`
 )
