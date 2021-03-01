@@ -36,8 +36,8 @@ features and functionality` section of the slack app configuration:
   * request URL: https://[server]/slack/event
   * Subscribe to workspace events: 'app_uninstalled'
 
-Note: This uses Slack v2 OAUTH 2.0. For legacy support, see v0.1.2:
-https://github.com/jitsi/jitsi-slack/releases/tag/v0.1.2
+Note: This uses Slack v2 OAUTH 2.0. For legacy support, see:
+[v0.1.2](https://github.com/jitsi/jitsi-slack/releases/tag/v0.1.2)
 
 ## Configuration
 
