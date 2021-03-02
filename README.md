@@ -16,12 +16,9 @@ on your local machine for development purposes.
 #### Go
 A working setup for the Go Programming Language is needed. Here is a [getting
 started](https://golang.org/doc/install) guide. The project is currently
-using go version 1.15 along with module support.
+using go version 1.16 along with module support.
 
 #### Slack
-
-NOTE: This project uses the original outdated Slack OAUTH 2.0 flow. Work is in
-progress to update this to use Slack's V2 OAUTH 2.0 flow.
 
 A slack account needs to be created as well as an
 [app](https://api.slack.com/apps). The app created is intended for
@@ -34,9 +31,13 @@ features and functionality` section of the slack app configuration:
   * set up '/jitsi' with: https://[server]/slash/jitsi
 * OAuth & Permissions
   * redirect URL: https://[server]/slack/auth
+  * Scopes: chat:write, commands, im:write, users:read
 * Event Subscriptions:
   * request URL: https://[server]/slack/event
-  * Subscribe to workspace events: 'tokens_revoked'
+  * Subscribe to workspace events: 'app_uninstalled'
+
+Note: This uses Slack v2 OAUTH 2.0. For legacy support, see:
+[v0.1.2](https://github.com/jitsi/jitsi-slack/releases/tag/v0.1.2)
 
 ## Configuration
 
@@ -56,6 +57,11 @@ JITSI_TOKEN_AUD=<audience for conference asap jwts>
 JITSI_CONFERENCE_HOST=<conference hosting service i.e. https://meet.jit.si>
 ```
 
+Note that `JITSI_TOKEN_SIGNING_KEY` is a dataurl that contains a
+base64-encoded PKCS1 or PKCS8 key, and should look something like:
+
+```data:application/pkcs1;kid=[urlencoded kid];base64,[base64 pkcs1 key]```
+
 ## Running
 
 Clone this project and build with `go build cmd/api/main.go` or build and run
@@ -63,7 +69,7 @@ with `go run cmd/api/main.go`
 
 ## Dependency Management
 
-Dependency management for this project uses go module as of go version 1.15.
+Dependency management for this project uses go module as of go version 1.16.
 More information can be found at [go command
 documentation](https://golang.org/cmd/go/#hdr-Modules__module_versions__and_more).
 

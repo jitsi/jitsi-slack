@@ -53,7 +53,7 @@ const (
 	}`
 	installMessage = `{
 		"response_type":"ephemeral",
-		"text":"Please install the jitsi meet app to integrate with your slack workspace.",
+		"text":"The Jitsi Meet app needs to be reinstalled to support updated Slack app APIs. Please ask your Slack admin to reinstall the app by going to 'manage apps', select Jitsi Meet, then 'Remove App' and immediately 'Add to Slack'.",
 		"attachments":[{"text":"%s"}]
 	}`
 )
@@ -80,21 +80,20 @@ func sendPersonalizedInvite(token, hostID, userID string, meeting *Meeting) erro
 		return err
 	}
 
-	attachments := slack.MsgOptionAttachments(
-		slack.Attachment{
-			Fallback: msg,
-			Title:    msg,
-			Color:    "#3AA3E3",
-			Actions: []slack.AttachmentAction{
-				slack.AttachmentAction{
-					Name:  "join",
-					Text:  "Join",
-					Type:  "button",
-					Style: "primary",
-					URL:   meetingURL,
-				},
+	attachment := slack.Attachment{
+		Fallback: msg,
+		Title:    msg,
+		Color:    "#3AA3E3",
+		Actions: []slack.AttachmentAction{
+			{
+				Name:  "join",
+				Text:  "Join",
+				Type:  "button",
+				Style: "primary",
+				URL:   meetingURL,
 			},
-		})
+		},
+	}
 
 	channel, _, _, err := slackClient.OpenConversation(
 		&slack.OpenConversationParameters{
@@ -105,7 +104,7 @@ func sendPersonalizedInvite(token, hostID, userID string, meeting *Meeting) erro
 		return err
 	}
 
-	_, _, err = slackClient.PostMessage(channel.ID, slack.MsgOptionText("", false), attachments)
+	_, _, err = slackClient.PostMessage(channel.ID, slack.MsgOptionAttachments(attachment))
 	return err
 }
 

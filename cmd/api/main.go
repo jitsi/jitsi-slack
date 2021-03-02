@@ -8,9 +8,8 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/caarlos0/env"
 	jitsi "github.com/jitsi/jitsi-slack"
 	"github.com/justinas/alice"
@@ -53,15 +52,12 @@ func main() {
 		log.Fatal().Err(err).Msg("service is misconfigured")
 	}
 
-	// Setup dynamodb session and create a token store.
-	cfg := aws.Config{
-		Region: aws.String(app.DynamoRegion),
-	}
-	sess, err := session.NewSession(&cfg)
+	// set up acces to dynamodb stores
+	cfg, err := config.LoadDefaultConfig(context.Background(), config.WithRegion(app.DynamoRegion))
 	if err != nil {
 		log.Fatal().Err(err).Msg("cannot start service w/o aws session")
 	}
-	svc := dynamodb.New(sess)
+	svc := dynamodb.NewFromConfig(cfg)
 	tokenStore := jitsi.TokenStore{
 		TableName: app.TokenTable,
 		DB:        svc,
@@ -106,13 +102,11 @@ func main() {
 		TokenWriter:        &tokenStore,
 	}
 
-	accessURL := "https://slack.com/api/oauth.access?client_id=%s&client_secret=%s&code=%s"
 	oauthHandler := jitsi.SlackOAuthHandlers{
-		AccessURLTemplate: accessURL,
-		ClientID:          app.SlackClientID,
-		ClientSecret:      app.SlackClientSecret,
-		AppID:             app.SlackAppID,
-		TokenWriter:       &tokenStore,
+		ClientID:     app.SlackClientID,
+		ClientSecret: app.SlackClientSecret,
+		AppID:        app.SlackAppID,
+		TokenWriter:  &tokenStore,
 	}
 
 	// Create an http mux and a server for that mux.
