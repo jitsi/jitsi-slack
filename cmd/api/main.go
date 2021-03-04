@@ -10,9 +10,11 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/caarlos0/env"
+	env "github.com/caarlos0/env/v6"
 	jitsi "github.com/jitsi/jitsi-slack"
+	stats "github.com/jitsi/prometheus-stats"
 	"github.com/justinas/alice"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/hlog"
 )
@@ -144,18 +146,21 @@ func main() {
 	)
 
 	// Wrap handlers with middleware chain.
-	slashJitsi := chain.ThenFunc(slashCmd.Jitsi)
-	slackOAuth := chain.ThenFunc(oauthHandler.Auth)
-	slackEvent := chain.ThenFunc(evHandle.Handle)
+	slashJitsi := stats.WrapHTTPHandler("slashJitsi", chain.ThenFunc(slashCmd.Jitsi))
+	slackOAuth := stats.WrapHTTPHandler("slackOAuth", chain.ThenFunc(oauthHandler.Auth))
+	slackEvent := stats.WrapHTTPHandler("slackEvent", chain.ThenFunc(evHandle.Handle))
 
 	// Add routes and wrapped handlers to mux.
-	handler.Handle("/slash/jitsi", slashJitsi)
-	handler.Handle("/slack/auth", slackOAuth)
-	handler.Handle("/slack/event", slackEvent)
+	handler.Handle("/slash/jitsi", slashJitsi) // slash command handler
+	handler.Handle("/slack/auth", slackOAuth)  // handles "Add to Slack"
+	handler.Handle("/slack/event", slackEvent) // handles workspace removal of app
 	handler.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "health check passed")
 	})
+
+	// Register stats handler on default http handler.
+	http.Handle("/metrics", promhttp.Handler())
 
 	// Start the server and set it up for graceful shutdown.
 	stop := make(chan os.Signal, 1)
@@ -164,6 +169,12 @@ func main() {
 		log.Info().Msgf("listening on :%s", app.HTTPPort)
 		err = srv.ListenAndServe()
 		log.Fatal().Err(err).Msg("shutting server down")
+	}()
+
+	// start stats server
+	go func() {
+		log.Info().Msg("stats listening on :2112")
+		log.Fatal().Err(http.ListenAndServe(":2112", nil)).Msg("shutting stat server down")
 	}()
 	<-stop
 	log.Info().Msg("shutting server down")
