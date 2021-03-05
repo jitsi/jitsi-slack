@@ -148,9 +148,9 @@ func main() {
 	)
 
 	// Wrap handlers with middleware chain.
-	slashJitsi := chain.ThenFunc(slashCmd.Jitsi)
-	slackOAuth := chain.ThenFunc(oauthHandler.Auth)
-	slackEvent := chain.ThenFunc(evHandle.Handle)
+	slashJitsi := stats.WrapHTTPHandler("slashJitsi", chain.ThenFunc(slashCmd.Jitsi))
+	slackOAuth := stats.WrapHTTPHandler("slackOAuth", chain.ThenFunc(oauthHandler.Auth))
+	slackEvent := stats.WrapHTTPHandler("slackEvent", chain.ThenFunc(evHandle.Handle))
 
 	// wrap metrics collection and publish endpoint
 	statsPort, err := strconv.ParseInt(app.StatsPort, 10, 16)
@@ -172,6 +172,9 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "health check passed")
 	})
+
+	// Register stats handler on default http handler.
+	http.Handle("/metrics", promhttp.Handler())
 
 	// Start the server and set it up for graceful shutdown.
 	stop := make(chan os.Signal, 1)
