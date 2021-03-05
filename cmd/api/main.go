@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -37,7 +38,8 @@ type appCfg struct {
 	ServerCfgTable string `env:"SERVER_CFG_TABLE,required"`
 	DynamoRegion   string `env:"DYNAMO_REGION,required"`
 	// application configuration
-	HTTPPort string `env:"HTTP_PORT" envDefault:"8080"`
+	HTTPPort  string `env:"HTTP_PORT" envDefault:"8080"`
+	StatsPort string `env:"STATS_PORT" envDefault:"0"`
 }
 
 var (
@@ -146,9 +148,21 @@ func main() {
 	)
 
 	// Wrap handlers with middleware chain.
-	slashJitsi := stats.WrapHTTPHandler("slashJitsi", chain.ThenFunc(slashCmd.Jitsi))
-	slackOAuth := stats.WrapHTTPHandler("slackOAuth", chain.ThenFunc(oauthHandler.Auth))
-	slackEvent := stats.WrapHTTPHandler("slackEvent", chain.ThenFunc(evHandle.Handle))
+	slashJitsi := chain.ThenFunc(slashCmd.Jitsi)
+	slackOAuth := chain.ThenFunc(oauthHandler.Auth)
+	slackEvent := chain.ThenFunc(evHandle.Handle)
+
+	// wrap metrics collection and publish endpoint
+	statsPort, err := strconv.ParseInt(app.StatsPort, 10, 16)
+	if err != nil || statsPort > 65535 || statsPort < 0 {
+		log.Fatal().Err(err).Msg("bad port for stats server")
+	}
+	if statsPort > 0 {
+		slashJitsi = stats.WrapHTTPHandler("slashJitsi", slashJitsi)
+		slackOAuth = stats.WrapHTTPHandler("slackOAuth", slackOAuth)
+		slackEvent = stats.WrapHTTPHandler("slackEvent", slackEvent)
+		http.Handle("/metrics", promhttp.Handler())
+	}
 
 	// Add routes and wrapped handlers to mux.
 	handler.Handle("/slash/jitsi", slashJitsi) // slash command handler
@@ -159,9 +173,6 @@ func main() {
 		fmt.Fprint(w, "health check passed")
 	})
 
-	// Register stats handler on default http handler.
-	http.Handle("/metrics", promhttp.Handler())
-
 	// Start the server and set it up for graceful shutdown.
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt)
@@ -171,11 +182,13 @@ func main() {
 		log.Fatal().Err(err).Msg("shutting server down")
 	}()
 
-	// start stats server
-	go func() {
-		log.Info().Msg("stats listening on :2112")
-		log.Fatal().Err(http.ListenAndServe(":2112", nil)).Msg("shutting stat server down")
-	}()
+	// Start stats server
+	if statsPort > 0 {
+		go func() {
+			log.Info().Msgf("stats listening on :%s", app.StatsPort)
+			log.Fatal().Err(http.ListenAndServe(":"+app.StatsPort, nil)).Msg("shutting stat server down")
+		}()
+	}
 	<-stop
 	log.Info().Msg("shutting server down")
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
