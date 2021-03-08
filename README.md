@@ -55,6 +55,8 @@ JITSI_TOKEN_KID=<key identifier for conference asap jwts>
 JITSI_TOKEN_ISS=<issuer for conference asap jwts>
 JITSI_TOKEN_AUD=<audience for conference asap jwts>
 JITSI_CONFERENCE_HOST=<conference hosting service i.e. https://meet.jit.si>
+HTTP_PORT=<port to run HTTP, default is 8080>
+STATS_PORT<port to serve Prometheus stats, default is to prevent stats>
 ```
 
 Note that `JITSI_TOKEN_SIGNING_KEY` is a dataurl that contains a
