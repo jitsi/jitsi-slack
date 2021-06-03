@@ -103,6 +103,7 @@ func main() {
 
 	evHandle := jitsi.EventHandler{
 		SlackSigningSecret: app.SlackSigningSecret,
+		TokenReader:        &tokenStore,
 		TokenWriter:        &tokenStore,
 	}
 

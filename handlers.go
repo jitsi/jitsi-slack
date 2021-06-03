@@ -85,6 +85,7 @@ func install(w http.ResponseWriter, sharableURL string) {
 // EventHandler is used to handle event callbacks from Slack api.
 type EventHandler struct {
 	SlackSigningSecret string
+	TokenReader        TokenReader
 	TokenWriter        TokenWriter
 }
 
@@ -137,7 +138,7 @@ func (e *EventHandler) Handle(w http.ResponseWriter, r *http.Request) {
 
 	if eventsAPIEvent.Type == slackevents.CallbackEvent {
 		innerEvent := eventsAPIEvent.InnerEvent
-		switch innerEvent.Data.(type) {
+		switch ev := innerEvent.Data.(type) {
 		case *slackevents.AppUninstalledEvent:
 			{
 				err := e.TokenWriter.Remove(eventsAPIEvent.TeamID)
@@ -148,6 +149,36 @@ func (e *EventHandler) Handle(w http.ResponseWriter, r *http.Request) {
 						Msg(fmt.Sprintf("app_uninstalled failed for: %s", eventsAPIEvent.TeamID))
 				}
 			}
+		case *slackevents.AppHomeOpenedEvent:
+			{
+				// grab a oauth token for the slack workspace.
+				token, err := e.TokenReader.GetTokenForTeam(eventsAPIEvent.TeamID)
+				if err != nil {
+					switch err.Error() {
+					case errMissingAuthToken:
+						hlog.FromRequest(r).Error().
+							Err(err).
+							Msg("ahoe: missing auth token")
+						w.WriteHeader(http.StatusForbidden)
+					default:
+						hlog.FromRequest(r).Error().
+							Err(err).
+							Msg("ahoe: error retrieving token")
+						w.WriteHeader(http.StatusInternalServerError)
+					}
+					return
+				}
+				err = sendWelcomeMessage(token.AccessToken, ev.User)
+				if err != nil {
+					hlog.FromRequest(r).Error().
+						Err(err).
+						Msg("ahoe: error sending welcome")
+					w.WriteHeader(http.StatusInternalServerError)
+				}
+			}
+			// possible future:
+			// tokens_revoked / TokensRevokedEvent - API tokens revoked
+			// message.app_home - message sent to Slack app
 		}
 	}
 

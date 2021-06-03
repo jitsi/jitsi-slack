@@ -56,7 +56,30 @@ const (
 		"text":"The Jitsi Meet app needs to be reinstalled to support updated Slack app APIs. Please ask your Slack admin to reinstall the app by going to 'manage apps', select Jitsi Meet, then 'Remove App' and immediately 'Add to Slack'.",
 		"attachments":[{"text":"%s"}]
 	}`
+	welcomeText = "`/jitsi` will let you set up secure video conferences using the free service at https://meet.jit.si/, or you can configure it to use your own Jitsi server. Check out `/jitsi help` for more information."
 )
+
+func sendWelcomeMessage(token, userID string) error {
+	slackClient := slack.New(token)
+
+	attachment := slack.Attachment{
+		Title: "Welcome to Jitsi Meet for Slack!",
+		Text:  welcomeText,
+		Color: "#3AA3E3",
+	}
+
+	channel, _, _, err := slackClient.OpenConversation(
+		&slack.OpenConversationParameters{
+			Users: []string{userID},
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	_, _, err = slackClient.PostMessage(channel.ID, slack.MsgOptionAttachments(attachment))
+	return err
+}
 
 func sendPersonalizedInvite(token, hostID, userID string, meeting *Meeting) error {
 	slackClient := slack.New(token)
