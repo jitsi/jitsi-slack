@@ -1,5 +1,5 @@
 # TODO revisit this to reduce the size of docker image, We can run an remove installing golang
-ROM golang:latest
+FROM golang:latest
 
 WORKDIR /app
 
