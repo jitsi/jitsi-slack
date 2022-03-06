@@ -1,3 +1,3 @@
 @Library("sariska-shared-lib@master") _
 
-buildAndPushImage()
+goBuildAndPushImage([mainGoFilePath: "cmd/api/main.go"])
