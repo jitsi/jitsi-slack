@@ -1,15 +1,9 @@
-# TODO revisit this to reduce the size of docker image, We can run an remove installing golang
-FROM golang:latest
+FROM alpine:latest as alpine
 
-WORKDIR /app
+RUN apk add -U --no-cache bash ca-certificates jq
 
-# Copy go mod and sum files
-COPY go.mod go.sum ./
-# Download all dependencies. Dependencies will be cached if the go.mod and go.sum files are not changed
-RUN go mod download
-COPY . .
-RUN go build -o main .
+ADD main /
+COPY build/run.sh /
 
+CMD ["/run.sh"]
 EXPOSE 8080
-RUN chmod 777 ./main
-CMD ["./main"]
