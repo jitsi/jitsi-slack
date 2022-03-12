@@ -390,9 +390,9 @@ func (o *SlackOAuthHandlers) Auth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("t1: %T\n", o.ClientID)
-    fmt.Printf("t2: %T\n", o.ClientSecret)
-    fmt.Printf("t3: %T\n", code[0])
+	fmt.Printf("t1: %s\n", o.ClientID)
+    fmt.Printf("t2: %s\n", o.ClientSecret)
+    fmt.Printf("t3: %s\n", code[0])
 
 	resp, err := slack.GetOAuthV2Response(
 		http.DefaultClient,
