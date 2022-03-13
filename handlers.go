@@ -390,11 +390,7 @@ func (o *SlackOAuthHandlers) Auth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("t1: %s\n", o.ClientID)
-	fmt.Printf("t2: %s\n", o.ClientSecret)
-	fmt.Printf("t3: %s\n", code[0])
-
-	resp, err := slack.GetOAuthResponse(
+	resp, err := slack.GetOAuthV2Response(
 		http.DefaultClient,
 		o.ClientID,
 		o.ClientSecret,
@@ -402,7 +398,6 @@ func (o *SlackOAuthHandlers) Auth(w http.ResponseWriter, r *http.Request) {
 		"")
 
 	if err != nil {
-		fmt.Println(err)
 		hlog.FromRequest(r).Error().
 			Err(err).
 			Msg("oauth req error")
@@ -411,6 +406,7 @@ func (o *SlackOAuthHandlers) Auth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = o.TokenWriter.Store(&TokenData{
+		TeamID:      resp.Team.ID,
 		AccessToken: resp.AccessToken,
 	})
 
