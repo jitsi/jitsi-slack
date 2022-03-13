@@ -402,6 +402,7 @@ func (o *SlackOAuthHandlers) Auth(w http.ResponseWriter, r *http.Request) {
 		"")
 
 	if err != nil {
+		fmt.Println(err)
 		hlog.FromRequest(r).Error().
 			Err(err).
 			Msg("oauth req error")
