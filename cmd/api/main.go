@@ -165,7 +165,7 @@ func main() {
 	}
 
 	// Add routes and wrapped handlers to mux.
-	handler.Handle("/slash/jitsi", slashJitsi) // slash command handler
+	handler.Handle("/slash/sariska", slashJitsi) // slash command handler
 	handler.Handle("/slack/auth", slackOAuth)  // handles "Add to Slack"
 	handler.Handle("/slack/event", slackEvent) // handles workspace removal of app
 	handler.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
