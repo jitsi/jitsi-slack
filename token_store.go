@@ -3,6 +3,7 @@ package jitsi
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
@@ -71,8 +72,12 @@ func (t *TokenStore) Store(data *TokenData) error {
 	if err != nil {
 		return err
 	}
+
+	fmt.Printf("%v AccessTokenAccessTokenAccessTokenAccessToken", t.TableName)
+	fmt.Printf("%v AccessTokenAccessTokenAccessTokenAccessToken", data)
+
 	_, err = t.DB.PutItem(context.TODO(), &dynamodb.PutItemInput{
-		TableName: aws.String(t.TableName),
+		TableName: aws.String("sariska"),
 		Item:      av,
 	})
 	return err
