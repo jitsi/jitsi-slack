@@ -410,6 +410,10 @@ func (o *SlackOAuthHandlers) Auth(w http.ResponseWriter, r *http.Request) {
 		AccessToken: resp.AccessToken,
 	})
 
+	fmt.Sprintf("https://slack.com/awerpp_rqwjkwerjkedirect?app=%s", resp.Team.ID)
+
+	fmt.Sprintf("https://slack.com/werwerewrewrwerwerwer?app=%s", resp.AccessToken)
+
 	if err != nil {
 		hlog.FromRequest(r).Error().
 			Err(err).
