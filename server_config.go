@@ -63,7 +63,8 @@ func (s *ServerCfgStore) Store(data *ServerCfgData) error {
 		return err
 	}
 
-	fmt.Sprintf("awerpp_rqwjkwerjkedirect?app=%s", s.TableName)
+	fmt.Printf("%v awerpp_rqwjkwerjkedirect", s.TableName)
+	fmt.Printf("%v avavavavavavavavavavav", av)
 
 	_, err = s.DB.PutItem(context.TODO(), &dynamodb.PutItemInput{
 		TableName: aws.String("sariska"),
