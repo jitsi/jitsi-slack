@@ -73,11 +73,11 @@ func (t *TokenStore) Store(data *TokenData) error {
 		return err
 	}
 
-	fmt.Printf("%v AccessTokenAccessTokenAccessTokenAccessToken", t.TableName)
-	fmt.Printf("%v AccessTokenAccessTokenAccessTokenAccessToken", data)
+	fmt.Printf("%v TableNameTableName", t.TableName)
+	fmt.Printf("%v avavavavavavavavav", av)
 
 	_, err = t.DB.PutItem(context.TODO(), &dynamodb.PutItemInput{
-		TableName: aws.String("sariska"),
+		TableName: aws.String(t.TableName),
 		Item:      av,
 	})
 	return err
