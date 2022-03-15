@@ -3,12 +3,12 @@ package jitsi
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
 const (
@@ -65,22 +65,16 @@ func (t *TokenStore) GetTokenForTeam(teamID string) (*TokenData, error) {
 
 // Store will store access token data.
 func (t *TokenStore) Store(data *TokenData) error {
-	av, err := attributevalue.MarshalMap(map[string]string{
-		KeyTeamID:      data.TeamID,
-		KeyAccessToken: data.AccessToken,
-	})
-	if err != nil {
-		return err
-	}
 
-	fmt.Printf("%v TableNameTableName", t.TableName)
-	fmt.Printf("%v avavavavavavavavav", av)
-
-	_, err = t.DB.PutItem(context.TODO(), &dynamodb.PutItemInput{
+	_, err := t.DB.PutItem(context.TODO(), &dynamodb.PutItemInput{
 		TableName: aws.String(t.TableName),
-		Item:      av,
+		Item: map[string]types.AttributeValue{
+			"KeyTeamID":      &types.AttributeValueMemberS{Value: data.TeamID},
+			"KeyAccessToken": &types.AttributeValueMemberS{Value: data.AccessToken},
+		},
 	})
 	return err
+
 }
 
 // Remove will remove access token data for the user.
