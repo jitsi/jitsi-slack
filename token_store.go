@@ -69,6 +69,7 @@ func (t *TokenStore) Store(data *TokenData) error {
 	_, err := t.DB.PutItem(context.TODO(), &dynamodb.PutItemInput{
 		TableName: aws.String(t.TableName),
 		Item: map[string]types.AttributeValue{
+			"sariska":        &types.AttributeValueMemberS{Value: "sariska"},
 			"KeyTeamID":      &types.AttributeValueMemberS{Value: data.TeamID},
 			"KeyAccessToken": &types.AttributeValueMemberS{Value: data.AccessToken},
 		},
